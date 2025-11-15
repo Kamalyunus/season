@@ -1,0 +1,519 @@
+# Category-Level Sales Forecasting Pipeline
+
+Minimal, production-ready forecasting system using MSTL decomposition, temperature-modulated seasonality, and LightGBM with automatic hyperparameter optimization.
+
+## Quick Start
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Generate demo data
+python demo_synthetic_data.py
+
+# Run forecasting pipeline
+python run.py
+
+# Validate performance
+python validate.py
+
+# (Optional) Tune hyperparameters once
+python tune_hyperparameters.py
+
+# (Optional) Visualize results
+python visualize_forecast.py
+```
+
+## File Structure
+
+```
+season/
+├── config.yaml                      # All pipeline parameters
+├── best_hyperparameters.yaml        # Tuned params (auto-generated)
+├── forecaster.py                    # Core forecasting class
+├── config_loader.py                 # Configuration utility
+├── run.py                           # Main pipeline execution
+├── validate.py                      # Time series cross-validation
+├── tune_hyperparameters.py          # Hyperparameter optimization
+├── visualize_forecast.py            # Forecast visualization
+├── demo_synthetic_data.py           # Generate synthetic data
+├── requirements.txt                 # Python dependencies
+└── README.md                        # This file
+```
+
+## Pipeline Architecture
+
+```
+SKU-Day Data
+    ↓
+Aggregate to Category (filter noisy categories, interpolate low instock)
+    ↓
+MSTL Decomposition (weekly + yearly seasonality)
+    ↓
+Trend Forecasting (exponential smoothing)
+    ↓
+Feature Engineering (lags, rolling stats, cyclical encoding)
+    ↓
+LightGBM Training (auto-loads tuned params if available)
+    ↓
+Forecast Generation (temperature-modulated seasonality)
+```
+
+## Key Features
+
+### 1. Category Filtering
+Automatically removes categories with < N SKUs (too noisy for reliable forecasting).
+
+**Configuration**:
+```yaml
+preprocessing:
+  min_skus_per_category: 10  # Filter categories with < 10 SKUs
+```
+
+**Example output**:
+```
+SKU count per category:
+  Fresh_Category_1: 15 SKUs ✓
+  Fresh_Category_2: 15 SKUs ✓
+  Small_Category: 8 SKUs ✗ (filtered)
+Retained 2/3 categories with >= 10 SKUs
+```
+
+**When to adjust**:
+- Small retailers: 5-8
+- Medium retailers: 10-15
+- Large retailers: 15-20
+
+### 2. Sales Interpolation
+Corrects sales during stockouts (low instock periods) using linear interpolation.
+
+**Configuration**:
+```yaml
+preprocessing:
+  instock_threshold: 0.85  # Interpolate when instock < 85%
+```
+
+**How it works**:
+```
+Day    Instock    Sales_Raw    Sales_Interpolated
+1      95%        100          100 (no change)
+2      95%        105          105 (no change)
+3      70%        60           102.5 (interpolated)
+4      75%        65           107.5 (interpolated)
+5      95%        110          110 (no change)
+```
+
+**When to adjust**:
+- Fresh products: 0.80-0.90 (higher sensitivity)
+- Non-perishables: 0.70-0.80
+- Fast movers: 0.85-0.95
+
+**Important**: `instock_rate` is NOT used as a model feature (prevents data leakage).
+
+### 3. Temperature Modulation
+Simple mathematical adjustment of yearly seasonality based on temperature.
+
+**Formula**:
+```python
+seasonal_yearly = base_pattern × (1 + temp_sensitivity × temp_deviation)
+# Bounded between 0.7 and 1.3 (±30% adjustment)
+```
+
+**Configuration**:
+```yaml
+decomposition:
+  temp_sensitivity: 0.02  # Default: moderate temperature effect
+```
+
+**Tuning guide**:
+```yaml
+# Low sensitivity (0.01): Canned goods, shelf-stable items
+temp_sensitivity: 0.01
+
+# Medium sensitivity (0.02): Most fresh items [DEFAULT]
+temp_sensitivity: 0.02
+
+# High sensitivity (0.05): Ice cream, cold beverages, seasonal produce
+temp_sensitivity: 0.05
+```
+
+**Example**:
+```
+Temperature: 30°C (hot day, +2 std deviations)
+Sensitivity: 0.02
+Adjustment: 1 + 0.02 × 2 = 1.04 (4% increase)
+
+For ice cream:
+  Base seasonal: +50 units
+  Modulated: +50 × 1.04 = +52 units
+```
+
+### 4. Automatic Hyperparameter Loading
+**Once you run tuning, optimal parameters are used automatically - no manual copying!**
+
+**How it works**:
+1. `forecaster.py` checks if `best_hyperparameters.yaml` exists
+2. If found → loads tuned LightGBM parameters
+3. If not found → falls back to `config.yaml` defaults
+
+**Usage**:
+```bash
+# One-time tuning
+python tune_hyperparameters.py
+
+# All future runs automatically use tuned params
+python run.py       # ✓ Auto-loads best_hyperparameters.yaml
+python validate.py  # ✓ Uses tuned params
+```
+
+## Configuration
+
+### Main Parameters (config.yaml)
+
+```yaml
+# Data Quality & Preprocessing
+preprocessing:
+  min_skus_per_category: 10      # Filter categories with < N SKUs
+  instock_threshold: 0.85        # Interpolate sales when instock < 85%
+
+# Decomposition
+decomposition:
+  weekly_period: 7
+  yearly_period: 365
+  seasonal_smoothing: 13
+  temp_sensitivity: 0.02         # Temperature effect strength (0.0-0.1)
+
+# Features
+features:
+  lag_days: [7, 14, 28]          # Lag features to create
+  rolling_windows: [7, 28]       # Rolling window sizes
+  min_non_nan_pct: 0.1          # Min data coverage to include feature
+
+# LightGBM (auto-loaded from tuned params if available)
+lightgbm:
+  n_estimators: 600
+  learning_rate: 0.1
+  max_depth: 5
+  num_leaves: 15
+  min_child_samples: 46
+  subsample: 0.76
+  colsample_bytree: 0.8
+  reg_alpha: 0.4
+  reg_lambda: 0.33
+  random_state: 42
+
+# Validation
+validation:
+  n_splits: 4                    # Number of CV folds
+  gap_days: 0                    # Gap between train/test
+  min_train_days: 180            # Minimum training data required
+
+# Hyperparameter Tuning
+optuna:
+  n_trials: 50                   # Number of trials (20-200)
+  timeout_seconds: 3600          # Max time (optional)
+
+  lgbm_search_space:             # Parameter ranges to search
+    learning_rate: [0.01, 0.1]
+    n_estimators: [300, 1000]
+    max_depth: [4, 12]
+    num_leaves: [15, 63]
+    min_child_samples: [10, 50]
+    subsample: [0.6, 1.0]
+    colsample_bytree: [0.6, 1.0]
+    reg_alpha: [0.0, 1.0]
+    reg_lambda: [0.0, 1.0]
+```
+
+## Hyperparameter Tuning
+
+### Running Tuning
+
+```bash
+python tune_hyperparameters.py
+```
+
+**What happens**:
+- Runs 50 Optuna trials (configurable)
+- Uses 3-fold time series cross-validation
+- Searches for optimal LightGBM parameters
+- Saves results to `best_hyperparameters.yaml`
+- Takes ~3-5 minutes
+
+**Example output**:
+```
+Best trial: 22
+Best CV MAPE: 4.12%
+
+Best Parameters:
+  n_estimators: 369
+  learning_rate: 0.093
+  max_depth: 7
+  num_leaves: 59
+  ...
+
+✓ Saved best parameters to: best_hyperparameters.yaml
+```
+
+### When to Re-Tune
+
+- Data significantly changed (2× more/less data)
+- New categories added
+- Changed `temp_sensitivity` or feature configuration
+- Validation WAPE increased by >2pp
+
+### Performance Improvement
+
+**Before tuning** (defaults from config.yaml):
+```
+Validation WAPE: ~13-14%
+```
+
+**After tuning** (optimized):
+```
+Validation WAPE: ~11-12%
+Improvement: ~2 percentage points
+```
+
+## Validation
+
+### Time Series Cross-Validation
+
+**Method**: Expanding window with 4 folds
+
+```
+Fold 1: [Train: 2022-01-01 to 2023-03-13] [Test: 2023-03-14 to 2023-03-20]
+Fold 2: [Train: 2022-01-01 to 2023-11-22] [Test: 2023-11-23 to 2023-11-29]
+Fold 3: [Train: 2022-01-01 to 2024-08-02] [Test: 2024-08-03 to 2024-08-09]
+Fold 4: [Train: 2022-01-01 to 2025-04-13] [Test: 2025-04-14 to 2025-04-20]
+```
+
+### Metrics
+
+- **WAPE** (Weighted Absolute Percentage Error): Primary metric
+- **MAPE** (Mean Absolute Percentage Error)
+- **MAE** (Mean Absolute Error)
+- **RMSE** (Root Mean Squared Error)
+- **Bias** (Over/under prediction tendency)
+
+**Example output**:
+```
+Overall Metrics (averaged):
+  MAE:   144.8
+  RMSE:  179.5
+  MAPE:  11.3%
+  WAPE:  11.7%  ← Primary metric
+  Bias:  -4.9%
+
+Metrics by Category:
+                     MAE    RMSE   MAPE   WAPE  Bias_%
+Fresh_Category_1  114.10  144.32  11.53  11.78   -2.48
+Fresh_Category_2  153.04  182.64  12.43  12.63   -5.88
+Fresh_Category_3  167.30  211.48   9.98  10.58   -6.32
+```
+
+## Data Requirements
+
+### Input Format (SKU-Day Level)
+
+Required columns:
+```
+sku_id          : Unique SKU identifier
+category        : Category name
+date            : Date (YYYY-MM-DD)
+sales           : Sales quantity
+instock_rate    : Instock % (0-100)
+price           : Average price
+temperature     : Temperature in °C
+holiday_gap     : Days to nearest holiday
+main_promo      : Main promo flag (0/1)
+other_promo     : Other promo count
+```
+
+**Minimum requirements**:
+- At least 2 years of daily data (730 days)
+- At least 10 SKUs per category
+- Complete temperature data
+- No missing dates
+
+### Output Files
+
+| File | Description |
+|------|-------------|
+| `category_day_aggregated.csv` | Aggregated category-level data |
+| `pooled_training_data.csv` | Engineered features for training |
+| `category_forecasts_30day.csv` | Forecasts by category |
+| `validation_metrics.csv` | Validation metrics by fold/category |
+| `validation_predictions.csv` | Actuals vs forecasts |
+| `best_hyperparameters.yaml` | Tuned LightGBM parameters |
+
+## API Reference
+
+### CategoryForecaster Class
+
+```python
+from forecaster import CategoryForecaster
+
+# Initialize
+forecaster = CategoryForecaster('config.yaml')
+
+# Methods
+forecaster.aggregate_to_category(sku_df)  → DataFrame
+    # Aggregate SKU-day to category-day with preprocessing
+    # - Filters categories by min SKUs
+    # - Interpolates sales during stockouts
+
+forecaster.decompose(category_df)
+    # MSTL decomposition for each category
+    # - Extracts weekly and yearly seasonality
+
+forecaster.forecast_trend()
+    # Exponential smoothing for trend forecasting
+
+forecaster.prepare_features() → DataFrame
+    # Engineer features from decomposed data
+
+forecaster.train_seasonal_model(pooled_df)
+    # Calculate temperature sensitivity (mathematical formula)
+
+forecaster.train_lgbm(pooled_df)
+    # Train LightGBM (auto-loads tuned params if available)
+
+forecaster.generate_forecast(
+    category_df,
+    future_temps,
+    future_promos,
+    future_prices=None
+) → DataFrame
+    # Generate forecasts for all categories
+```
+
+## Usage Example
+
+```python
+from forecaster import CategoryForecaster
+import pandas as pd
+
+# Initialize
+forecaster = CategoryForecaster('config.yaml')
+
+# Load data
+sku_data = pd.read_csv('demo_sku_data.csv')
+
+# Aggregate (with preprocessing)
+category_data = forecaster.aggregate_to_category(sku_data)
+
+# Decompose
+forecaster.decompose(category_data)
+
+# Forecast trend
+forecaster.forecast_trend()
+
+# Prepare features
+pooled_data = forecaster.prepare_features()
+
+# Train models
+forecaster.train_seasonal_model(pooled_data)
+forecaster.train_lgbm(pooled_data)  # Auto-loads tuned params
+
+# Generate forecast
+future_temps = {
+    'Fresh_Category_1': [25, 26, 24, 25, 27, 28, 26],
+    'Fresh_Category_2': [25, 26, 24, 25, 27, 28, 26],
+    'Fresh_Category_3': [25, 26, 24, 25, 27, 28, 26]
+}
+
+future_promos = {
+    'Fresh_Category_1': pd.DataFrame({
+        'date': pd.date_range('2026-01-01', periods=7),
+        'main_promo': [0, 0, 5, 5, 0, 0, 0],
+        'other_promo': [0, 0, 0, 0, 0, 0, 0]
+    })
+}
+
+forecasts = forecaster.generate_forecast(
+    category_data,
+    future_temps,
+    future_promos
+)
+
+print(forecasts)
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**1. "No categories have >= N SKUs"**
+```
+Solution: Lower min_skus_per_category in config.yaml
+preprocessing:
+  min_skus_per_category: 5  # Reduced from 10
+```
+
+**2. "MSTL decomposition failed"**
+```
+Cause: Insufficient data (<2 years)
+Solution: Increase data collection period
+```
+
+**3. "Tuned parameters worse than defaults"**
+```
+Cause: Overfitting to validation set
+Solution:
+1. Increase validation.n_splits to 4-5
+2. Run more trials (n_trials: 100)
+3. Delete best_hyperparameters.yaml and re-tune
+```
+
+**4. "High WAPE (>20%)"**
+```
+Possible causes:
+1. Noisy data → Increase min_skus_per_category
+2. Poor seasonality → Adjust temp_sensitivity
+3. Needs tuning → Run tune_hyperparameters.py
+```
+
+## Performance Tips
+
+### Improve Accuracy
+1. Run hyperparameter tuning
+2. Adjust temp_sensitivity for product type
+3. Increase min_skus_per_category (filter noise)
+4. Use 3-4 years of data instead of 2
+
+### Improve Speed
+1. Reduce n_trials to 20-30 for quick tuning
+2. Reduce n_splits to 2-3 validation folds
+3. Reduce n_estimators to 300-400
+
+### Reduce Overfitting
+1. Increase regularization (reg_alpha, reg_lambda)
+2. Reduce model complexity (max_depth, num_leaves)
+3. More validation folds (n_splits: 4-5)
+
+## Dependencies
+
+```
+pandas>=1.5.0
+numpy>=1.23.0
+statsmodels>=0.14.0
+lightgbm>=4.0.0
+pyyaml>=6.0
+optuna>=3.0.0
+matplotlib>=3.5.0
+scikit-learn>=1.2.0
+```
+
+Install all:
+```bash
+pip install -r requirements.txt
+```
+
+## Best Practices
+
+1. **Always validate**: Run `validate.py` after configuration changes
+2. **Version control configs**: Commit `config.yaml` and `best_hyperparameters.yaml`
+3. **Monitor in production**: Track WAPE over time
+4. **Re-tune periodically**: When data changes significantly
+5. **Test before deploying**: Validate on holdout period

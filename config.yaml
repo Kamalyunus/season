@@ -1,0 +1,111 @@
+# Configuration File for Category Forecasting Pipeline
+# ======================================================
+
+# Data Generation (for synthetic data demo)
+data:
+  n_categories: 3
+  n_skus_per_category: 15
+  n_days: 1460  # 4 years
+  start_date: "2022-01-01"
+
+# Data Quality & Preprocessing
+preprocessing:
+  # Minimum number of SKUs required for a category to be included
+  # Categories with fewer SKUs are filtered out as they are too noisy
+  min_skus_per_category: 10
+
+  # Instock rate threshold for sales interpolation
+  # If instock_rate falls below this threshold, sales are interpolated
+  # to account for stockout impact on true demand
+  # Range: 0.0-1.0 (e.g., 0.8 = 80% instock)
+  instock_threshold: 0.85
+
+# Forecasting Parameters
+forecast:
+  horizon_days: 7  # How many days ahead to forecast
+
+# Time Series Decomposition (MSTL)
+decomposition:
+  weekly_period: 7
+  yearly_period: 365
+  seasonal_smoothing: 13  # STL seasonal parameter
+
+  # Temperature modulation for yearly seasonality
+  # Controls how much temperature affects seasonal patterns
+  # Higher = more temperature sensitivity
+  # Range: 0.0 (no adjustment) to 0.1 (strong adjustment)
+  # Recommended: 0.01-0.05 for fresh products
+  temp_sensitivity: 0.02  # Default: moderate temperature effect
+
+# Trend Forecasting (Exponential Smoothing)
+trend:
+  smoothing_level: 0.8
+  smoothing_trend: 0.2
+  use_exponential_smoothing: true
+
+# Feature Engineering
+features:
+  # Lag features (in days)
+  lag_days: [7, 14, 28]  # Removed 365 for simplicity
+
+  # Rolling window features (in days)
+  rolling_windows: [7, 28]
+
+  # Minimum percentage of non-NaN values to include lag feature
+  min_non_nan_pct: 0.1
+
+# NOTE: Random Forest removed - using simple temperature modulation instead
+# Temperature modulation configured in decomposition.temp_sensitivity above
+
+# LightGBM (Final Forecast Model)
+lightgbm:
+  objective: "regression"
+  n_estimators: 600
+  learning_rate: 0.1
+  max_depth: 5
+  num_leaves: 15
+  min_child_samples: 46
+  subsample: 0.76
+  subsample_freq: 1
+  colsample_bytree: 0.8
+  reg_alpha: 0.4
+  reg_lambda: 0.33
+  random_state: 42
+
+# Validation
+validation:
+  n_splits: 4  # Number of time series CV folds
+  gap_days: 0  # Gap between train and test
+  min_train_days: 180  # Minimum training data required
+
+# Hyperparameter Tuning (Optuna)
+optuna:
+  n_trials: 50  # Number of optimization trials
+  timeout_seconds: 3600  # 1 hour timeout
+
+  # LightGBM search space
+  lgbm_search_space:
+    learning_rate: [0.01, 0.1]  # min, max
+    n_estimators: [300, 1000]
+    max_depth: [4, 12]
+    num_leaves: [15, 63]
+    min_child_samples: [10, 50]
+    subsample: [0.6, 1.0]
+    colsample_bytree: [0.6, 1.0]
+    reg_alpha: [0.0, 1.0]
+    reg_lambda: [0.0, 1.0]
+
+# Output Files
+output:
+  category_data: "category_day_aggregated.csv"
+  pooled_data: "pooled_training_data.csv"
+  forecasts: "category_forecasts_30day.csv"
+  validation_metrics: "validation_metrics.csv"
+  validation_predictions: "validation_predictions.csv"
+  best_params: "best_hyperparameters.yaml"
+
+# Visualization
+visualization:
+  lookback_days: 180  # Days of history to show before forecast
+  dpi: 300
+  figsize_per_category: [16, 12]
