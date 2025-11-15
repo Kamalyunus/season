@@ -203,13 +203,13 @@ class CategoryForecaster:
             for lag in lag_days:
                 df[f'sales_lag_{lag}'] = df['sales'].shift(lag)
 
-            # Rolling features
+            # Rolling features (shift AFTER rolling for maximum recency)
             for window in roll_windows:
-                df[f'sales_roll_mean_{window}'] = df['sales'].shift(30).rolling(window).mean()
-                df[f'sales_roll_std_{window}'] = df['sales'].shift(30).rolling(window).std()
+                df[f'sales_roll_mean_{window}'] = df['sales'].rolling(window).mean().shift(1)
+                df[f'sales_roll_std_{window}'] = df['sales'].rolling(window).std().shift(1)
 
             # Price features
-            df['price_roll_mean_28'] = df['price'].shift(30).rolling(28).mean()
+            df['price_roll_mean_28'] = df['price'].rolling(28).mean().shift(1)
             df['price_ratio'] = df['price'] / df['price_roll_mean_28']
 
             # Promo features
@@ -217,7 +217,7 @@ class CategoryForecaster:
             df['promo_intensity'] = df['total_promo'] / df['assortment_count']
 
             # Temperature features
-            df['temp_roll_mean_7'] = df['temperature'].shift(7).rolling(7).mean()
+            df['temp_roll_mean_7'] = df['temperature'].rolling(7).mean().shift(1)
             df['temp_deviation'] = df['temperature'] - df['temp_roll_mean_7']
 
             all_data.append(df)

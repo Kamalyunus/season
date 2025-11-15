@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.patches import Rectangle
+from forecaster import CategoryForecaster
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -230,6 +231,70 @@ def plot_weekly_pattern_verification(predictions_df, output_path='weekly_pattern
     plt.close()
 
 
+def plot_feature_importance(category_df, output_path='feature_importance.png'):
+    """
+    Plot feature importance from trained LightGBM model
+    """
+    print("\nTraining model to extract feature importance...")
+
+    # Train forecaster
+    forecaster = CategoryForecaster()
+    forecaster.decompose(category_df)
+    forecaster.forecast_trend()
+
+    pooled = forecaster.prepare_features()
+    forecaster.train_seasonal_model(pooled)
+    forecaster.train_lgbm(pooled)
+
+    # Get feature importance
+    importance = forecaster.lgbm_model.feature_importances_
+    features = forecaster.lgbm_features
+
+    # Create dataframe
+    importance_df = pd.DataFrame({
+        'feature': features,
+        'importance': importance
+    }).sort_values('importance', ascending=True)
+
+    print(f"✓ Extracted importance for {len(features)} features")
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(10, max(8, len(features) * 0.3)))
+
+    colors = plt.cm.viridis(importance_df['importance'] / importance_df['importance'].max())
+
+    bars = ax.barh(importance_df['feature'], importance_df['importance'], color=colors)
+    ax.set_xlabel('Importance (Gain)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Feature', fontsize=12, fontweight='bold')
+    ax.set_title('LightGBM Feature Importance\n(Higher = More Important for Predictions)',
+                 fontsize=14, fontweight='bold', pad=20)
+    ax.grid(axis='x', alpha=0.3, linestyle='--')
+
+    # Add value labels on bars
+    for bar in bars:
+        width = bar.get_width()
+        ax.text(width, bar.get_y() + bar.get_height()/2.,
+               f'{width:.0f}',
+               ha='left', va='center', fontsize=8, fontweight='bold')
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"✓ Saved feature importance plot: {output_path}")
+
+    # Print top features
+    print("\n" + "="*60)
+    print("TOP 10 MOST IMPORTANT FEATURES")
+    print("="*60)
+    top_features = importance_df.tail(10).iloc[::-1]
+    for idx, row in top_features.iterrows():
+        print(f"  {row['feature']:30s} {row['importance']:10.1f}")
+    print("="*60)
+
+    plt.close()
+
+    return importance_df
+
+
 def main():
     """
     Generate comprehensive forecast visualizations
@@ -265,6 +330,9 @@ def main():
     # Generate weekly pattern verification
     plot_weekly_pattern_verification(predictions_df, 'weekly_pattern.png')
 
+    # Generate feature importance plot
+    plot_feature_importance(category_df, 'feature_importance.png')
+
     print("\n" + "="*80)
     print("✓ Visualization Complete!")
     print("="*80)
@@ -274,6 +342,7 @@ def main():
     print("  3. Seasonal components (weekly + yearly)")
     print("  4. Forecast errors with metrics")
     print("  5. Weekly pattern verification")
+    print("  6. Feature importance ranking")
 
 
 if __name__ == "__main__":
