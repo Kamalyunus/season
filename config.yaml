@@ -76,7 +76,7 @@ lightgbm:
 
 # Validation
 validation:
-  n_splits: 5  # Number of time series CV folds
+  n_splits: 60  # Number of time series CV folds
   train_window_days: 800  # 3 years for robust yearly seasonality (was 730)  # Fixed training window size (must be >= 730 for yearly seasonality)
 
 # Hyperparameter Tuning (Optuna)

@@ -54,9 +54,19 @@ def plot_forecast_vs_actual(category_df, predictions_df, output_path='forecast_a
 
             fold_preds = fold_preds.sort_values('date')
 
+            # Calculate metrics for title
+            fold_preds['error'] = fold_preds['forecast'] - fold_preds['sales']
+            fold_preds['error_pct'] = (fold_preds['error'] / fold_preds['sales']) * 100
+
+            mape = abs(fold_preds['error_pct']).mean()
+            bias = fold_preds['error'].mean()
+            bias_pct = (bias / fold_preds['sales'].mean()) * 100
+
             # Create figure with subplots
             fig, axes = plt.subplots(4, 1, figsize=(16, 12))
-            fig.suptitle(f'{category} - Fold {fold}: Historical Context + Forecast Validation',
+            test_start_str = fold_preds['date'].min().strftime('%Y-%m-%d')
+            test_end_str = fold_preds['date'].max().strftime('%Y-%m-%d')
+            fig.suptitle(f'{category} - Test Period: {test_start_str} to {test_end_str} | MAPE: {mape:.1f}% | Bias: {bias_pct:+.1f}%',
                         fontsize=16, fontweight='bold')
 
             # Get test period dates
@@ -140,10 +150,7 @@ def plot_forecast_vs_actual(category_df, predictions_df, output_path='forecast_a
             # === Plot 4: Forecast Error ===
             ax4 = axes[3]
 
-            fold_preds['error'] = fold_preds['forecast'] - fold_preds['sales']
-            fold_preds['error_pct'] = (fold_preds['error'] / fold_preds['sales']) * 100
-
-            # Error bars
+            # Error bars (metrics already calculated above for title)
             colors = ['red' if x > 0 else 'green' for x in fold_preds['error']]
             ax4.bar(fold_preds['date'], fold_preds['error'],
                    color=colors, alpha=0.6, width=0.8)
@@ -171,8 +178,9 @@ def plot_forecast_vs_actual(category_df, predictions_df, output_path='forecast_a
 
             plt.tight_layout()
 
-            # Save figure
-            filename = output_path.replace('.png', f'_{category}_fold{fold}.png')
+            # Save figure with test start date in filename
+            test_start_str = test_start.strftime('%Y-%m-%d')
+            filename = output_path.replace('.png', f'_{category}_{test_start_str}.png')
             plt.savefig(filename, dpi=300, bbox_inches='tight')
             print(f"  ✓ Saved: {filename}")
             plt.close()
@@ -299,9 +307,17 @@ def main():
     """
     Generate comprehensive forecast visualizations
     """
+    import os
+
+    # Create plots directory
+    plots_dir = 'forecast_plots'
+    os.makedirs(plots_dir, exist_ok=True)
+
     print("="*80)
     print("FORECAST VISUALIZATION")
     print("="*80)
+    print(f"Plots will be saved to: {plots_dir}/")
+    print()
 
     # Load data
     try:
@@ -325,13 +341,13 @@ def main():
     print("\nGenerating plots...")
 
     # Generate detailed forecast vs actual plots
-    plot_forecast_vs_actual(category_df, predictions_df, 'forecast_analysis.png')
+    plot_forecast_vs_actual(category_df, predictions_df, f'{plots_dir}/forecast_analysis.png')
 
     # Generate weekly pattern verification
-    plot_weekly_pattern_verification(predictions_df, 'weekly_pattern.png')
+    plot_weekly_pattern_verification(predictions_df, f'{plots_dir}/weekly_pattern.png')
 
     # Generate feature importance plot
-    plot_feature_importance(category_df, 'feature_importance.png')
+    plot_feature_importance(category_df, f'{plots_dir}/feature_importance.png')
 
     print("\n" + "="*80)
     print("✓ Visualization Complete!")
