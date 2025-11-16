@@ -37,6 +37,184 @@ python tune_hyperparameters.py
 python visualize_forecast.py
 ```
 
+## Execution Order
+
+### 1️⃣ First-Time Setup
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Generate demo data (or prepare your own SKU-level data)
+python demo_synthetic_data.py
+```
+
+**Output**: `demo_sku_data.csv` (or use your own data file)
+
+---
+
+### 2️⃣ Initial Pipeline Run
+
+```bash
+# Run the full forecasting pipeline
+python run.py
+```
+
+**What it does**:
+1. Aggregates SKU → Category level
+2. MSTL decomposition
+3. Trend forecasting
+4. Feature engineering
+5. Train seasonal model
+6. Train LightGBM (uses defaults from config.yaml)
+7. Generate forecasts
+
+**Output**:
+- `category_day_aggregated.csv`
+- `pooled_training_data.csv`
+- `category_forecasts_30day.csv`
+
+---
+
+### 3️⃣ Validate Performance
+
+```bash
+# Run time series cross-validation
+python validate.py
+```
+
+**What it does**:
+- 3-4 fold expanding window validation
+- Tests forecasting on historical data
+- Calculates sales-weighted metrics (WAPE, MAPE, etc.)
+
+**Output**:
+- `validation_metrics.csv`
+- `validation_predictions.csv`
+- Console output with WAPE (e.g., ~11-14% before tuning)
+
+---
+
+### 4️⃣ (Optional) Visualize Results
+
+```bash
+# Generate all plots
+python visualize_forecast.py
+```
+
+**Output**:
+- `forecast_analysis_*.png` (per category, per fold)
+- `weekly_pattern.png`
+- `feature_importance.png`
+
+---
+
+### 5️⃣ (Optional) Hyperparameter Tuning
+
+**⚠️ Do this ONCE after initial validation**
+
+```bash
+# Tune LightGBM hyperparameters (takes 15-30 minutes)
+python tune_hyperparameters.py
+```
+
+**What it does**:
+- Runs 50 Optuna trials
+- Each trial runs full pipeline with different hyperparameters
+- Optimizes sales-weighted MAPE
+- Saves best parameters
+
+**Output**:
+- `best_hyperparameters.yaml` (auto-loaded by future runs)
+
+**After tuning, re-run validation to see improvement**:
+```bash
+python validate.py  # Should see ~2pp WAPE improvement
+```
+
+---
+
+### 6️⃣ Production Workflow
+
+Once tuned, your regular workflow is:
+
+```bash
+# Optional: Provide future business inputs
+# Create these CSV files if you have planned data:
+# - future_prices.csv
+# - future_promos.csv
+# - future_temperature.csv
+
+# Generate forecasts
+python run.py  # Auto-loads best_hyperparameters.yaml
+
+# Check results
+cat category_forecasts_30day.csv
+```
+
+---
+
+### Execution Flow Diagram
+
+```
+┌─────────────────────────────────────────────┐
+│ SETUP (Once)                                │
+├─────────────────────────────────────────────┤
+│ 1. pip install -r requirements.txt          │
+│ 2. python demo_synthetic_data.py            │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│ INITIAL RUN                                 │
+├─────────────────────────────────────────────┤
+│ 3. python run.py                            │
+│ 4. python validate.py                       │
+│    → Check WAPE (e.g., ~13%)                │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│ OPTIMIZATION (One-time, Optional)           │
+├─────────────────────────────────────────────┤
+│ 5. python tune_hyperparameters.py          │
+│    → Saves best_hyperparameters.yaml        │
+│ 6. python validate.py                       │
+│    → Check improved WAPE (e.g., ~11%)       │
+│ 7. python visualize_forecast.py (optional)  │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│ PRODUCTION (Recurring)                      │
+├─────────────────────────────────────────────┤
+│ • Update data files                         │
+│ • Optional: Add future_*.csv files          │
+│ • python run.py (auto-uses tuned params)    │
+│ • Use category_forecasts_30day.csv          │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+### When to Re-Run What
+
+| Scenario | Command | Why |
+|----------|---------|-----|
+| **New data available** | `python run.py` | Generate fresh forecasts |
+| **Changed config** | `python validate.py` | Check impact on performance |
+| **Added/removed categories** | `python tune_hyperparameters.py` → `python validate.py` | Re-optimize for new data structure |
+| **WAPE degraded by >2pp** | `python tune_hyperparameters.py` | Re-tune hyperparameters |
+| **Need forecast visuals** | `python visualize_forecast.py` | Generate plots |
+| **Data volume 2× changed** | `python tune_hyperparameters.py` | Re-optimize for new scale |
+
+---
+
+### Key Points
+
+1. **run.py is your main script** - Use this in production to generate forecasts
+2. **validate.py checks quality** - Run after major changes to verify WAPE
+3. **tune_hyperparameters.py is one-time** - Only re-run when data changes significantly
+4. **Order matters for tuning** - Must run `run.py` first to generate `category_day_aggregated.csv`
+5. **Tuned params auto-load** - After tuning, `run.py` and `validate.py` automatically use `best_hyperparameters.yaml`
+
 ## File Structure
 
 ```
