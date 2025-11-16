@@ -31,7 +31,7 @@ features:
   min_non_nan_pct: 0.1
 lightgbm:
   objective: regression
-  n_estimators: 848
+  n_estimators: 300  # Reduced from 848 for faster training
   learning_rate: 0.09945172875654647
   max_depth: 11
   num_leaves: 37
@@ -43,7 +43,7 @@ lightgbm:
   reg_lambda: 0.17924648416867145
   random_state: 42
 validation:
-  n_splits: 3
+  n_splits: 5  # Reduced from 30 for faster validation
   train_window_days: 730
 optuna:
   n_trials: 50

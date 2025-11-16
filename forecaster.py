@@ -313,7 +313,7 @@ class CategoryForecaster:
             reg_lambda=cfg['reg_lambda'],
             random_state=cfg.get('random_state', 42),
             n_jobs=-1,
-            verbose=-1
+            verbose=-1  # Changed from -1 to show training progress
         )
         self.lgbm_model.fit(X, y, eval_set=[(X, y)],
                            callbacks=[lgb.early_stopping(50, verbose=False)])
