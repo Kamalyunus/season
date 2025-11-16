@@ -29,6 +29,7 @@ decomposition:
   weekly_period: 7
   yearly_period: 365
   seasonal_smoothing: 13  # STL seasonal parameter
+  robust: True
 
   # Temperature modulation for yearly seasonality
   # Controls how much temperature affects seasonal patterns
@@ -41,12 +42,13 @@ decomposition:
 trend:
   smoothing_level: 0.8
   smoothing_trend: 0.2
+  damping_trend: 0.95  # Damping parameter (0.8-0.98): flattens trend over forecast horizon
   use_exponential_smoothing: true
 
 # Feature Engineering
 features:
   # Lag features (in days)
-  lag_days: [7, 14, 28]  # Removed 365 for simplicity
+  lag_days: [1, 7, 14, 28]  # lag_1 = yesterday's sales (most predictive)
 
   # Rolling window features (in days)
   rolling_windows: [7, 28]
@@ -74,7 +76,7 @@ lightgbm:
 
 # Validation
 validation:
-  n_splits: 4  # Number of time series CV folds
+  n_splits: 3  # Number of time series CV folds
   gap_days: 0  # Gap between train and test
   min_train_days: 180  # Minimum training data required
 
@@ -94,6 +96,13 @@ optuna:
     colsample_bytree: [0.6, 1.0]
     reg_alpha: [0.0, 1.0]
     reg_lambda: [0.0, 1.0]
+
+# Input Files
+input:
+  sku_data: "demo_sku_data.csv"
+  future_prices: "future_prices.csv"      # Optional: planned pricing schedule (date,category,price)
+  future_promos: "future_promos.csv"      # Optional: planned promotions (date,category,main_promo,other_promo)
+  future_temperature: "future_temperature.csv"  # Optional: temperature forecast (date,category,temperature)
 
 # Output Files
 output:

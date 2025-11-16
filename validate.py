@@ -48,6 +48,7 @@ def calculate_metrics(y_true, y_pred):
     wape = np.sum(np.abs(y_true - y_pred)) / np.sum(y_true) * 100
     bias = np.mean(y_pred - y_true)
     bias_pct = bias / np.mean(y_true) * 100
+    total_sales = np.sum(y_true)
 
     return {
         'MAE': mae,
@@ -55,7 +56,8 @@ def calculate_metrics(y_true, y_pred):
         'MAPE': mape,
         'WAPE': wape,
         'Bias': bias,
-        'Bias_%': bias_pct
+        'Bias_%': bias_pct,
+        'Total_Sales': total_sales
     }
 
 
@@ -101,16 +103,18 @@ def validate(category_df, config):
         categories = train_df['category'].unique()
         future_temps = {}
         future_promos = {}
+        future_prices = {}
 
         for cat in categories:
             cat_test = test_df[test_df['category'] == cat].sort_values('date')
             if len(cat_test) > 0:
                 future_temps[cat] = cat_test['temperature'].values.tolist()
                 future_promos[cat] = cat_test[['date', 'main_promo', 'other_promo']].copy()
+                future_prices[cat] = cat_test['price'].values.tolist()
 
         # Generate forecasts
         try:
-            forecasts = forecaster.generate_forecast(train_df, future_temps, future_promos)
+            forecasts = forecaster.generate_forecast(train_df, future_temps, future_promos, future_prices)
 
             # Merge with actuals
             comparison = forecasts.merge(
@@ -159,14 +163,21 @@ def validate(category_df, config):
     print("VALIDATION SUMMARY")
     print("="*80)
 
-    print("\nOverall Metrics (averaged):")
+    print("\nOverall Metrics (weighted by sales volume):")
     print("-"*80)
-    overall = results_df[['MAE', 'RMSE', 'MAPE', 'WAPE', 'Bias_%']].mean()
-    print(f"  MAE:   {overall['MAE']:.1f}")
-    print(f"  RMSE:  {overall['RMSE']:.1f}")
-    print(f"  MAPE:  {overall['MAPE']:.1f}%")
-    print(f"  WAPE:  {overall['WAPE']:.1f}%")
-    print(f"  Bias:  {overall['Bias_%']:.1f}%")
+
+    # Calculate weighted averages using Total_Sales as weights
+    total_weight = results_df['Total_Sales'].sum()
+    overall_weighted = {}
+    for metric in ['MAE', 'RMSE', 'MAPE', 'WAPE', 'Bias_%']:
+        overall_weighted[metric] = (results_df[metric] * results_df['Total_Sales']).sum() / total_weight
+
+    print(f"  MAE:   {overall_weighted['MAE']:.1f}")
+    print(f"  RMSE:  {overall_weighted['RMSE']:.1f}")
+    print(f"  MAPE:  {overall_weighted['MAPE']:.1f}%")
+    print(f"  WAPE:  {overall_weighted['WAPE']:.1f}%")
+    print(f"  Bias:  {overall_weighted['Bias_%']:.1f}%")
+    print(f"  Total Sales: {total_weight:,.0f}")
 
     print("\nMetrics by Category:")
     print("-"*80)
@@ -175,7 +186,8 @@ def validate(category_df, config):
         'RMSE': 'mean',
         'MAPE': 'mean',
         'WAPE': 'mean',
-        'Bias_%': 'mean'
+        'Bias_%': 'mean',
+        'Total_Sales': 'sum'  # Total sales across all folds
     }).round(2)
     print(by_category.to_string())
 

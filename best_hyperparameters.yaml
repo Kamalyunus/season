@@ -12,13 +12,16 @@ decomposition:
   weekly_period: 7
   yearly_period: 365
   seasonal_smoothing: 13
+  robust: true
   temp_sensitivity: 0.02
 trend:
   smoothing_level: 0.8
   smoothing_trend: 0.2
+  damping_trend: 0.95
   use_exponential_smoothing: true
 features:
   lag_days:
+  - 1
   - 7
   - 14
   - 28
@@ -28,19 +31,19 @@ features:
   min_non_nan_pct: 0.1
 lightgbm:
   objective: regression
-  n_estimators: 558
-  learning_rate: 0.09365779307507782
-  max_depth: 8
-  num_leaves: 44
-  min_child_samples: 28
-  subsample: 0.9896911825097577
+  n_estimators: 653
+  learning_rate: 0.09715278810793519
+  max_depth: 9
+  num_leaves: 19
+  min_child_samples: 44
+  subsample: 0.874595614745533
   subsample_freq: 1
-  colsample_bytree: 0.7648000580654479
-  reg_alpha: 0.8988909342233438
-  reg_lambda: 0.9647964606697267
+  colsample_bytree: 0.6317619483839668
+  reg_alpha: 0.7871225587874597
+  reg_lambda: 0.2958805407892789
   random_state: 42
 validation:
-  n_splits: 4
+  n_splits: 3
   gap_days: 0
   min_train_days: 180
 optuna:
@@ -74,6 +77,11 @@ optuna:
     reg_lambda:
     - 0.0
     - 1.0
+input:
+  sku_data: demo_sku_data.csv
+  future_prices: future_prices.csv
+  future_promos: future_promos.csv
+  future_temperature: future_temperature.csv
 output:
   category_data: category_day_aggregated.csv
   pooled_data: pooled_training_data.csv

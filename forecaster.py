@@ -16,10 +16,11 @@ warnings.filterwarnings('ignore')
 class CategoryForecaster:
     """Simplified forecasting pipeline with config-driven parameters"""
 
-    def __init__(self, config_path='config.yaml'):
+    def __init__(self, config_path='config.yaml', lgbm_params_override=None):
         from config_loader import load_config
         self.config = load_config(config_path)
         self.horizon = self.config.get('forecast.horizon_days')
+        self.lgbm_params_override = lgbm_params_override  # For hyperparameter tuning
 
         # Model storage
         self.categories = None
@@ -112,13 +113,14 @@ class CategoryForecaster:
         weekly_p = self.config.get('decomposition.weekly_period')
         yearly_p = self.config.get('decomposition.yearly_period')
         seasonal_s = self.config.get('decomposition.seasonal_smoothing')
+        robust_s = self.config.get('decomposition.robust')
 
         for cat in self.categories:
             data = category_df[category_df['category'] == cat].sort_values('date')
 
             try:
                 mstl = MSTL(data['sales'].values, periods=(weekly_p, yearly_p),
-                           stl_kwargs={'seasonal': seasonal_s})
+                           stl_kwargs={'seasonal': seasonal_s, 'robust': robust_s})
                 result = mstl.fit()
 
                 # Handle 1D vs 2D seasonal output
@@ -126,13 +128,10 @@ class CategoryForecaster:
                     seasonal_weekly = result.seasonal[:, 0]
                     seasonal_yearly = result.seasonal[:, 1]
                 else:
-                    # Less than 2 years: only weekly extracted
-                    if len(data) < 730:
-                        seasonal_weekly = result.seasonal
-                        seasonal_yearly = np.zeros_like(seasonal_weekly)
-                    else:
-                        seasonal_yearly = result.seasonal
-                        seasonal_weekly = np.zeros_like(seasonal_yearly)
+                    # Only 1D output: MSTL extracted only weekly seasonality
+                    # (yearly extraction failed due to weak signal or insufficient data)
+                    seasonal_weekly = result.seasonal
+                    seasonal_yearly = np.zeros_like(seasonal_weekly)
 
                 self.decompositions[cat] = {
                     'data': data,
@@ -152,14 +151,16 @@ class CategoryForecaster:
 
         level = self.config.get('trend.smoothing_level')
         slope = self.config.get('trend.smoothing_trend')
+        damping = self.config.get('trend.damping_trend')
 
         for cat in self.decompositions:
             trend = self.decompositions[cat]['trend']
 
             try:
-                model = ExponentialSmoothing(trend, trend='add', seasonal=None,
-                                            initialization_method='estimated')
-                fitted = model.fit(smoothing_level=level, smoothing_trend=slope)
+                model = ExponentialSmoothing(trend, trend='add', damped_trend=True,
+                                            seasonal=None, initialization_method='estimated')
+                fitted = model.fit(smoothing_level=level, smoothing_trend=slope,
+                                  damping_trend=damping)
                 forecast = fitted.forecast(self.horizon)
 
             except:
@@ -279,32 +280,38 @@ class CategoryForecaster:
 
         X, y = train[self.lgbm_features], train['sales']
 
-        # Check if tuned hyperparameters exist and use them
-        import os
-        tuned_params_file = self.config.get('output.best_params', 'best_hyperparameters.yaml')
-
-        if os.path.exists(tuned_params_file):
-            print(f"  ✓ Loading tuned hyperparameters from: {tuned_params_file}")
-            from config_loader import load_config
-            tuned_config = load_config(tuned_params_file)
-            cfg = tuned_config['lightgbm']
+        # Determine which hyperparameters to use
+        if self.lgbm_params_override:
+            # Use override params (for hyperparameter tuning)
+            cfg = self.config['lightgbm'].copy()
+            cfg.update(self.lgbm_params_override)
         else:
-            print("  ℹ Using default hyperparameters from config.yaml")
-            cfg = self.config['lightgbm']
+            # Check if tuned hyperparameters exist and use them
+            import os
+            tuned_params_file = self.config.get('output.best_params', 'best_hyperparameters.yaml')
+
+            if os.path.exists(tuned_params_file):
+                print(f"  ✓ Loading tuned hyperparameters from: {tuned_params_file}")
+                from config_loader import load_config
+                tuned_config = load_config(tuned_params_file)
+                cfg = tuned_config['lightgbm']
+            else:
+                print("  ℹ Using default hyperparameters from config.yaml")
+                cfg = self.config['lightgbm']
 
         self.lgbm_model = lgb.LGBMRegressor(
-            objective=cfg['objective'],
+            objective=cfg.get('objective', 'regression'),
             n_estimators=cfg['n_estimators'],
             learning_rate=cfg['learning_rate'],
             max_depth=cfg['max_depth'],
             num_leaves=cfg['num_leaves'],
             min_child_samples=cfg['min_child_samples'],
             subsample=cfg['subsample'],
-            subsample_freq=cfg['subsample_freq'],
+            subsample_freq=cfg.get('subsample_freq', 1),
             colsample_bytree=cfg['colsample_bytree'],
             reg_alpha=cfg['reg_alpha'],
             reg_lambda=cfg['reg_lambda'],
-            random_state=cfg['random_state'],
+            random_state=cfg.get('random_state', 42),
             n_jobs=-1,
             verbose=-1
         )

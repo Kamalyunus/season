@@ -1,16 +1,15 @@
 """
 Hyperparameter Tuning with Optuna
-Optimizes LightGBM parameters
+Optimizes LightGBM parameters using full forecasting pipeline
 """
 
 import pandas as pd
-import numpy as np
 import optuna
 from optuna.samplers import TPESampler
-import lightgbm as lgb
 from sklearn.metrics import mean_absolute_percentage_error
 import warnings
 from config_loader import load_config
+from forecaster import CategoryForecaster
 
 warnings.filterwarnings('ignore')
 
@@ -46,14 +45,13 @@ class HyperparameterTuner:
 
         return splits
 
-    def objective_lgbm(self, trial, pooled_df, cv_splits, feature_cols):
-        """Objective function for LightGBM tuning"""
+    def objective_lgbm(self, trial, category_df, cv_splits):
+        """Objective function for LightGBM tuning using full forecasting pipeline"""
 
         # Sample hyperparameters
         search_space = self.config['optuna']['lgbm_search_space']
 
-        params = {
-            'objective': 'regression',
+        trial_params = {
             'n_estimators': trial.suggest_int('n_estimators', *search_space['n_estimators']),
             'learning_rate': trial.suggest_float('learning_rate', *search_space['learning_rate'], log=True),
             'max_depth': trial.suggest_int('max_depth', *search_space['max_depth']),
@@ -63,48 +61,88 @@ class HyperparameterTuner:
             'colsample_bytree': trial.suggest_float('colsample_bytree', *search_space['colsample_bytree']),
             'reg_alpha': trial.suggest_float('reg_alpha', *search_space['reg_alpha']),
             'reg_lambda': trial.suggest_float('reg_lambda', *search_space['reg_lambda']),
-            'n_estimators': 300,
-            'random_state': 42,
-            'n_jobs': -1,
-            'verbose': -1
         }
 
-        # Cross-validation
-        mapes = []
+        # Cross-validation using full pipeline
+        fold_mapes = []
+        fold_sales = []
 
         for train_end, test_start, test_end in cv_splits:
-            train_df = pooled_df[pooled_df['date'] <= train_end]
-            test_df = pooled_df[(pooled_df['date'] >= test_start) & (pooled_df['date'] <= test_end)]
+            try:
+                # Split data
+                train_df = category_df[category_df['date'] <= train_end].copy()
+                test_df = category_df[(category_df['date'] >= test_start) &
+                                     (category_df['date'] <= test_end)].copy()
 
-            train_clean = train_df.dropna(subset=feature_cols + ['sales'])
-            test_clean = test_df.dropna(subset=feature_cols + ['sales'])
+                if len(train_df) < 730 or len(test_df) == 0:
+                    continue
 
-            if len(train_clean) == 0 or len(test_clean) == 0:
+                # Initialize forecaster with trial hyperparameters
+                forecaster = CategoryForecaster(lgbm_params_override=trial_params)
+
+                # Run full pipeline on training data
+                forecaster.decompose(train_df)
+                forecaster.forecast_trend()
+                pooled = forecaster.prepare_features()
+                forecaster.train_seasonal_model(pooled)
+                forecaster.train_lgbm(pooled)
+
+                # Prepare future inputs from test data (like validate.py)
+                categories = train_df['category'].unique()
+                future_temps = {}
+                future_promos = {}
+                future_prices = {}
+
+                for cat in categories:
+                    cat_test = test_df[test_df['category'] == cat].sort_values('date')
+                    if len(cat_test) > 0:
+                        future_temps[cat] = cat_test['temperature'].values.tolist()
+                        future_promos[cat] = cat_test[['date', 'main_promo', 'other_promo']].copy()
+                        future_prices[cat] = cat_test['price'].values.tolist()
+
+                # Generate forecasts using full pipeline
+                forecasts = forecaster.generate_forecast(train_df, future_temps, future_promos, future_prices)
+
+                # Merge with actuals
+                comparison = forecasts.merge(
+                    test_df[['date', 'category', 'sales']],
+                    on=['date', 'category'],
+                    how='inner'
+                )
+
+                if len(comparison) > 0:
+                    mape = mean_absolute_percentage_error(
+                        comparison['sales'].values,
+                        comparison['forecast'].values
+                    ) * 100
+                    total_sales = comparison['sales'].sum()
+
+                    fold_mapes.append(mape)
+                    fold_sales.append(total_sales)
+
+            except Exception:
                 continue
 
-            X_train, y_train = train_clean[feature_cols], train_clean['sales']
-            X_test, y_test = test_clean[feature_cols], test_clean['sales']
-
-            model = lgb.LGBMRegressor(**params)
-            model.fit(X_train, y_train, eval_set=[(X_train, y_train)],
-                     callbacks=[lgb.early_stopping(30, verbose=False)])
-
-            y_pred = model.predict(X_test)
-            mape = mean_absolute_percentage_error(y_test, y_pred) * 100
-            mapes.append(mape)
-
-        return np.mean(mapes) if mapes else 100.0
+        # Calculate sales-weighted MAPE
+        if fold_mapes and fold_sales:
+            weighted_mape = sum(m * s for m, s in zip(fold_mapes, fold_sales)) / sum(fold_sales)
+            return weighted_mape
+        else:
+            return 100.0
 
 
-    def tune(self, pooled_df):
-        """Run hyperparameter tuning for LightGBM"""
+    def tune(self, category_df):
+        """Run hyperparameter tuning for LightGBM using full forecasting pipeline"""
         print("="*80)
         print("HYPERPARAMETER TUNING WITH OPTUNA")
+        print("Using full forecasting pipeline for realistic evaluation")
         print("="*80)
 
         # Create CV splits
-        cv_splits = self.create_cv_splits(pooled_df)
+        cv_splits = self.create_cv_splits(category_df)
         print(f"\nCross-validation folds: {len(cv_splits)}")
+        for i, (train_end, test_start, test_end) in enumerate(cv_splits):
+            print(f"  Fold {i+1}: Train until {train_end.date()}, Test: {test_start.date()} to {test_end.date()}")
 
         n_trials = self.config.get('optuna.n_trials')
         timeout = self.config.get('optuna.timeout_seconds')
@@ -113,16 +151,11 @@ class HyperparameterTuner:
         print("\n" + "="*80)
         print("Tuning LightGBM Parameters")
         print("="*80)
-
-        lgbm_features = [col for col in pooled_df.columns if col not in
-                        ['date', 'category', 'sales', 'sku_id', 'remainder', 'observed']]
-
-        # Filter to available features
-        available_features = [f for f in lgbm_features if f in pooled_df.columns]
+        print("Note: This may take longer as each trial runs the full pipeline")
 
         study_lgbm = optuna.create_study(direction='minimize', sampler=TPESampler(seed=42))
         study_lgbm.optimize(
-            lambda trial: self.objective_lgbm(trial, pooled_df, cv_splits, available_features),
+            lambda trial: self.objective_lgbm(trial, category_df, cv_splits),
             n_trials=n_trials,
             timeout=timeout,
             show_progress_bar=True
@@ -146,7 +179,7 @@ class HyperparameterTuner:
         self.config.save(output_path)
 
         print(f"✓ Saved best parameters to: {output_path}")
-        print("\nTo use these parameters, copy them to config.yaml")
+        print("\nThese parameters are automatically used by run.py and validate.py")
 
         return self.best_params
 
@@ -156,17 +189,19 @@ def main():
 
     # Load data
     try:
-        pooled_df = pd.read_csv('pooled_training_data.csv')
-        pooled_df['date'] = pd.to_datetime(pooled_df['date'])
-        print(f"\n✓ Loaded pooled data: {len(pooled_df)} records\n")
+        category_df = pd.read_csv('category_day_aggregated.csv')
+        category_df['date'] = pd.to_datetime(category_df['date'])
+        print(f"\n✓ Loaded category data: {len(category_df)} records")
+        print(f"  Categories: {category_df['category'].nunique()}")
+        print(f"  Date range: {category_df['date'].min().date()} to {category_df['date'].max().date()}\n")
     except FileNotFoundError:
-        print("Error: pooled_training_data.csv not found")
-        print("Please run the forecasting pipeline first")
+        print("Error: category_day_aggregated.csv not found")
+        print("Please run the forecasting pipeline first: python run.py")
         return
 
     # Run tuning
     tuner = HyperparameterTuner()
-    best_params = tuner.tune(pooled_df)
+    best_params = tuner.tune(category_df)
 
     print("\n" + "="*80)
     print("✓ TUNING COMPLETE")
@@ -174,6 +209,9 @@ def main():
     print("\nBest LightGBM Parameters:")
     for key, value in best_params['lightgbm'].items():
         print(f"  {key}: {value}")
+    print("\nThese parameters will be automatically used by:")
+    print("  - python run.py")
+    print("  - python validate.py")
 
 
 if __name__ == "__main__":

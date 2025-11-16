@@ -2,6 +2,19 @@
 
 Minimal, production-ready forecasting system using MSTL decomposition, temperature-modulated seasonality, and LightGBM with automatic hyperparameter optimization.
 
+## What's New (Nov 2025)
+
+Recent improvements for better accuracy and production readiness:
+
+- **Damped Trend Forecasting**: Prevents unrealistic trend extrapolation (configurable `damping_trend: 0.95`)
+- **lag_1 Feature Added**: Yesterday's sales now included (`lag_days: [1, 7, 14, 28]`)
+- **Future Inputs from CSV**: Optional `future_prices.csv`, `future_promos.csv`, `future_temperature.csv` for planned business data
+- **Sales-Weighted Metrics**: Validation and tuning now weight by sales volume (high-volume categories have more influence)
+- **Improved Hyperparameter Tuning**: Uses full forecasting pipeline per trial (more realistic, consistent with production)
+- **Fixed MSTL Logic**: Correctly handles 1D seasonality output (weekly-only when yearly extraction fails)
+
+See [CLAUDE.md](CLAUDE.md#recent-improvements-2025-11) for detailed technical notes.
+
 ## Quick Start
 
 ```bash
@@ -183,11 +196,24 @@ decomposition:
   seasonal_smoothing: 13
   temp_sensitivity: 0.02         # Temperature effect strength (0.0-0.1)
 
+# Trend Forecasting (Exponential Smoothing)
+trend:
+  smoothing_level: 0.8
+  smoothing_trend: 0.2
+  damping_trend: 0.95            # NEW: Damping prevents over-extrapolation (0.8-0.98)
+
 # Features
 features:
-  lag_days: [7, 14, 28]          # Lag features to create
+  lag_days: [1, 7, 14, 28]       # NEW: lag_1 added (yesterday's sales)
   rolling_windows: [7, 28]       # Rolling window sizes
   min_non_nan_pct: 0.1          # Min data coverage to include feature
+
+# Input Files (NEW: Optional future inputs)
+input:
+  sku_data: "demo_sku_data.csv"
+  future_prices: "future_prices.csv"         # Optional: planned pricing
+  future_promos: "future_promos.csv"         # Optional: promo calendar
+  future_temperature: "future_temperature.csv"  # Optional: weather forecasts
 
 # LightGBM (auto-loaded from tuned params if available)
 lightgbm:
@@ -236,9 +262,11 @@ python tune_hyperparameters.py
 **What happens**:
 - Runs 50 Optuna trials (configurable)
 - Uses 3-fold time series cross-validation
+- **NEW**: Each trial runs the full forecasting pipeline (MSTL, trend, feature engineering, etc.)
+- **NEW**: Optimizes sales-weighted MAPE (high-volume periods have more influence)
 - Searches for optimal LightGBM parameters
 - Saves results to `best_hyperparameters.yaml`
-- Takes ~3-5 minutes
+- Takes ~15-30 minutes (slower but more accurate than before)
 
 **Example output**:
 ```
@@ -296,20 +324,23 @@ Fold 4: [Train: 2022-01-01 to 2025-04-13] [Test: 2025-04-14 to 2025-04-20]
 - **RMSE** (Root Mean Squared Error)
 - **Bias** (Over/under prediction tendency)
 
+**NEW**: All metrics are now **sales-weighted** - high-volume categories have more influence than low-volume categories.
+
 **Example output**:
 ```
-Overall Metrics (averaged):
+Overall Metrics (weighted by sales volume):
   MAE:   144.8
   RMSE:  179.5
   MAPE:  11.3%
   WAPE:  11.7%  ← Primary metric
   Bias:  -4.9%
+  Total Sales: 125,432  ← Total volume across all folds
 
 Metrics by Category:
-                     MAE    RMSE   MAPE   WAPE  Bias_%
-Fresh_Category_1  114.10  144.32  11.53  11.78   -2.48
-Fresh_Category_2  153.04  182.64  12.43  12.63   -5.88
-Fresh_Category_3  167.30  211.48   9.98  10.58   -6.32
+                     MAE    RMSE   MAPE   WAPE  Bias_%  Total_Sales
+Fresh_Category_1  114.10  144.32  11.53  11.78   -2.48    45,230
+Fresh_Category_2  153.04  182.64  12.43  12.63   -5.88    52,105
+Fresh_Category_3  167.30  211.48   9.98  10.58   -6.32    28,097
 ```
 
 ## Data Requirements
@@ -335,6 +366,38 @@ other_promo     : Other promo count
 - At least 10 SKUs per category
 - Complete temperature data
 - No missing dates
+
+### Optional Future Inputs (NEW)
+
+You can optionally provide planned business data as CSV files for more accurate forecasts:
+
+**future_prices.csv** (Planned pricing schedule):
+```csv
+date,category,price
+2026-01-01,Category_A,5.99
+2026-01-02,Category_A,4.99  # Promotional price
+```
+
+**future_promos.csv** (Promotional calendar):
+```csv
+date,category,main_promo,other_promo
+2026-01-01,Category_A,0,0
+2026-01-02,Category_A,1,2  # Main promo + 2 other promos
+```
+
+**future_temperature.csv** (Weather forecasts):
+```csv
+date,category,temperature
+2026-01-01,Category_A,15.5
+2026-01-02,Category_A,16.2
+```
+
+**Templates**: See `future_*_template.csv` files for examples.
+
+**Fallback behavior** (if files not provided):
+- Prices: Last known price
+- Promos: No promotions (conservative)
+- Temperature: Historical day-of-year average
 
 ### Output Files
 
