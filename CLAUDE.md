@@ -87,7 +87,7 @@ SKU-Day Data
 
 **Execution Scripts**:
 - `run.py`: Main pipeline - calls all 7 steps sequentially
-- `validate.py`: Time series cross-validation with expanding window
+- `validate.py`: Time series cross-validation with fixed-size moving window
 - `tune_hyperparameters.py`: Optuna-based hyperparameter search (LightGBM only)
 - `visualize_forecast.py`: All visualizations (forecast analysis, weekly patterns, feature importance)
 - `demo_synthetic_data.py`: Generate synthetic data for testing
@@ -126,9 +126,10 @@ All configuration is in `config.yaml`. Key sections:
 ## Validation Methodology
 
 **Time Series Cross-Validation** (validate.py):
-- Expanding window approach (growing training set)
-- 4 folds, 7-day forecast horizon
-- Trains on historical data up to `train_end`, forecasts next 7 days
+- **Fixed-size moving window** approach (each fold has same 730-day training window)
+- 3 folds (configurable), 7-day forecast horizon
+- Each fold trains on exactly 730 days (2 years), window slides forward for next fold
+- **Ensures yearly seasonality**: All folds have >= 730 days for MSTL decomposition
 - Uses SAME `generate_forecast()` method as production (lines 84-113)
 - **No test data leakage**: Model sees only training data when generating forecasts
 - **Expected inputs available**: Temperature (weather forecasts) and promotions (planned schedule)

@@ -13,7 +13,16 @@ warnings.filterwarnings('ignore')
 
 
 def create_cv_splits(category_df, config):
-    """Create time series CV splits"""
+    """Create time series CV splits with FIXED sliding window
+
+    Returns splits with fixed training window size (not expanding).
+    Each fold has the same training window size, sliding forward in time.
+
+    Works BACKWARD from most recent data:
+    - Last fold always tests on most recent period (ends at max_date)
+    - Folds slide backward in time (older data discarded if insufficient)
+    - Ensures validation on latest data (most realistic for production)
+    """
 
     max_date = category_df['date'].max()
     min_date = category_df['date'].min()
@@ -21,19 +30,62 @@ def create_cv_splits(category_df, config):
 
     n_splits = config.get('validation.n_splits')
     horizon = config.get('forecast.horizon_days')
-    min_train = config.get('validation.min_train_days')
+    train_window_days = config.get('validation.train_window_days')
 
-    available = total_days - min_train - horizon
-    step = max(30, available // (n_splits + 1))
+    # Validate minimum training window for MSTL
+    if train_window_days < 730:
+        raise ValueError(f"train_window_days must be >= 730 for yearly seasonality. Got {train_window_days}")
 
+    # Calculate maximum possible splits based on available data
+    # Formula: max_splits = (total_days - train_window_days) / horizon
+    max_possible_splits = (total_days - train_window_days) // horizon
+
+    # Inform user about data capacity
+    print(f"\nData Summary:")
+    print(f"  Total days available: {total_days} (from {min_date.date()} to {max_date.date()})")
+    print(f"  Training window size: {train_window_days} days")
+    print(f"  Forecast horizon: {horizon} days")
+    print(f"  Requested splits: {n_splits}")
+    print(f"  Maximum possible splits: {max_possible_splits}")
+
+    if n_splits > max_possible_splits:
+        print(f"\n⚠ WARNING: Requested {n_splits} splits but only {max_possible_splits} possible with current data.")
+        print(f"  Recommendation: Set validation.n_splits to {max_possible_splits} or less in config.yaml")
+    elif n_splits < max_possible_splits:
+        print(f"\n✓ You could increase to {max_possible_splits} splits for more robust validation.")
+
+    # Ensure enough data for all folds
+    # Need: train_window + (n_splits * horizon) for contiguous test periods
+    required_days = train_window_days + (n_splits * horizon)
+    if total_days < required_days:
+        raise ValueError(
+            f"Insufficient data: need {required_days} days for {n_splits} folds, "
+            f"have {total_days} days. Reduce n_splits or increase data."
+        )
+
+    # Step size = forecast horizon (contiguous test periods)
+    step = horizon
+
+    # Create splits working BACKWARD from most recent data
+    # Last fold always ends at max_date (most recent period)
     splits = []
     for i in range(n_splits):
-        train_end = max_date - pd.Timedelta(days=(n_splits - i) * step + horizon)
-        test_start = train_end + pd.Timedelta(days=1)
-        test_end = test_start + pd.Timedelta(days=horizon - 1)
+        # Work backward: last fold (i=n_splits-1) ends at max_date
+        fold_offset = (n_splits - 1 - i) * step
 
-        if train_end >= min_date + pd.Timedelta(days=min_train):
-            splits.append((train_end, test_start, test_end))
+        # Test period
+        test_end = max_date - pd.Timedelta(days=fold_offset)
+        test_start = test_end - pd.Timedelta(days=horizon - 1)
+
+        # Training period (fixed window ending just before test)
+        train_end = test_start - pd.Timedelta(days=1)
+        train_start = train_end - pd.Timedelta(days=train_window_days - 1)
+
+        # Only include if we have enough historical data
+        if train_start >= min_date:
+            splits.append((train_start, train_end, test_start, test_end))
+        else:
+            print(f"Warning: Fold {i+1} skipped - train_start before min_date (need more data)")
 
     return splits
 
@@ -74,15 +126,19 @@ def validate(category_df, config):
     all_results = []
     all_predictions = []
 
-    for fold_idx, (train_end, test_start, test_end) in enumerate(splits, 1):
+    for fold_idx, (train_start, train_end, test_start, test_end) in enumerate(splits, 1):
         print("="*80)
         print(f"Fold {fold_idx}/{len(splits)}")
         print("="*80)
-        print(f"Train: {category_df['date'].min()} to {train_end}")
+        train_days = (train_end - train_start).days + 1
+        print(f"Train: {train_start} to {train_end} ({train_days} days)")
         print(f"Test:  {test_start} to {test_end}\n")
 
-        # Split data
-        train_df = category_df[category_df['date'] <= train_end].copy()
+        # Split data (fixed window)
+        train_df = category_df[
+            (category_df['date'] >= train_start) &
+            (category_df['date'] <= train_end)
+        ].copy()
         test_df = category_df[
             (category_df['date'] >= test_start) &
             (category_df['date'] <= test_end)

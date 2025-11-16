@@ -409,7 +409,7 @@ lightgbm:
 # Validation
 validation:
   n_splits: 3                    # Number of CV folds
-  min_train_days: 180            # Minimum training data required
+  train_window_days: 730         # Fixed training window size (must be >= 730 for yearly seasonality)
 
 # Hyperparameter Tuning
 optuna:
@@ -460,6 +460,28 @@ Best Parameters:
 ✓ Saved best parameters to: best_hyperparameters.yaml
 ```
 
+### Validation Strategy
+
+Hyperparameter tuning uses **the same validation strategy as validate.py** to ensure consistency:
+
+**Fixed-Size Moving Window Cross-Validation**:
+- Each fold trains on exactly **730 days** (2 years) for yearly seasonality
+- **Step size = forecast horizon** (e.g., 7 days) for contiguous test periods
+- **Works backward from most recent data** (last fold ends at max_date)
+- **Sales-weighted MAPE** across folds (high-volume periods weighted more)
+
+**Example with 3 folds, 7-day horizon**:
+```
+Fold 1: Train [Day 1, Day 730]   → Test [Day 731, Day 737]
+Fold 2: Train [Day 8, Day 737]   → Test [Day 738, Day 744]
+Fold 3: Train [Day 15, Day 744]  → Test [Day 745, Day 751]
+```
+
+**Why this matters**:
+- Hyperparameters optimized for **same conditions** as production forecasting
+- Fixed training window ensures stable yearly seasonality extraction
+- Most recent data validation reflects realistic performance
+
 ### When to Re-Tune
 
 - Data significantly changed (2× more/less data)
@@ -484,13 +506,31 @@ Improvement: ~2 percentage points
 
 ### Time Series Cross-Validation
 
-**Method**: Expanding window with 4 folds
+**Method**: Fixed-size moving window with 3 folds (configurable)
 
+**Strategy**:
+- Each fold trains on exactly **730 days** (2 years) for yearly seasonality
+- Test periods are **contiguous** (step = forecast horizon)
+- Works **backward from most recent data** (last fold ends at max_date)
+- Ensures validation on latest data patterns
+
+**Example with 3 folds, 7-day horizon, max_date = 2025-12-31**:
 ```
-Fold 1: [Train: 2022-01-01 to 2023-03-13] [Test: 2023-03-14 to 2023-03-20]
-Fold 2: [Train: 2022-01-01 to 2023-11-22] [Test: 2023-11-23 to 2023-11-29]
-Fold 3: [Train: 2022-01-01 to 2024-08-02] [Test: 2024-08-03 to 2024-08-09]
-Fold 4: [Train: 2022-01-01 to 2025-04-13] [Test: 2025-04-14 to 2025-04-20]
+Fold 1: Train [2024-06-15 to 2025-12-10] → Test [2025-12-11 to 2025-12-17]
+Fold 2: Train [2024-06-22 to 2025-12-17] → Test [2025-12-18 to 2025-12-24]
+Fold 3: Train [2024-06-29 to 2025-12-24] → Test [2025-12-25 to 2025-12-31]
+```
+
+**Maximum possible splits**: Displayed when running `validate.py` based on your data:
+```
+Data Summary:
+  Total days available: 1460 (from 2022-01-01 to 2025-12-31)
+  Training window size: 730 days
+  Forecast horizon: 7 days
+  Requested splits: 3
+  Maximum possible splits: 104
+
+✓ You could increase to 104 splits for more robust validation.
 ```
 
 ### Metrics

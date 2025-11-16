@@ -77,7 +77,7 @@ lightgbm:
 # Validation
 validation:
   n_splits: 3  # Number of time series CV folds
-  min_train_days: 180  # Minimum training data required
+  train_window_days: 730  # Fixed training window size (must be >= 730 for yearly seasonality)
 
 # Hyperparameter Tuning (Optuna)
 optuna:
