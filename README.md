@@ -12,6 +12,9 @@ Recent improvements for better accuracy and production readiness:
 - **Sales-Weighted Metrics**: Validation and tuning now weight by sales volume (high-volume categories have more influence)
 - **Improved Hyperparameter Tuning**: Uses full forecasting pipeline per trial (more realistic, consistent with production)
 - **Fixed MSTL Logic**: Correctly handles 1D seasonality output (weekly-only when yearly extraction fails)
+- **Enhanced Synthetic Data**: Stronger yearly seasonality (60% amplitude) and lower noise (8%) for realistic testing
+- **Organized Visualizations**: All plots saved to `forecast_plots/` with date-based naming and metrics in titles
+- **Training Progress**: LightGBM now shows training progress (verbose mode enabled)
 
 See [CLAUDE.md](CLAUDE.md#recent-improvements-2025-11) for detailed technical notes.
 
@@ -102,10 +105,10 @@ python validate.py
 python visualize_forecast.py
 ```
 
-**Output**:
-- `forecast_analysis_*.png` (per category, per fold)
-- `weekly_pattern.png`
-- `feature_importance.png`
+**Output** (all saved to `forecast_plots/` folder):
+- `forecast_analysis_{category}_{test_date}.png` (date-based naming, includes MAPE/Bias in title)
+- `weekly_pattern.png` (average weekly seasonal pattern)
+- `feature_importance.png` (LightGBM feature ranking)
 
 ---
 
@@ -221,13 +224,14 @@ cat category_forecasts_30day.csv
 season/
 ├── config.yaml                      # All pipeline parameters
 ├── best_hyperparameters.yaml        # Tuned params (auto-generated)
-├── forecaster.py                    # Core forecasting class
-├── config_loader.py                 # Configuration utility
-├── run.py                           # Main pipeline execution
-├── validate.py                      # Time series cross-validation
-├── tune_hyperparameters.py          # Hyperparameter optimization
-├── visualize_forecast.py            # Forecast visualization
-├── demo_synthetic_data.py           # Generate synthetic data
+├── forecaster.py                    # Core forecasting class (441 lines)
+├── config_loader.py                 # Configuration utility (82 lines)
+├── run.py                           # Main pipeline execution (262 lines)
+├── validate.py                      # Time series cross-validation (273 lines)
+├── tune_hyperparameters.py          # Hyperparameter optimization (233 lines)
+├── visualize_forecast.py            # Forecast visualization (361 lines)
+├── demo_synthetic_data.py           # Generate synthetic data (184 lines)
+├── forecast_plots/                  # Generated visualizations (organized)
 ├── requirements.txt                 # Python dependencies
 └── README.md                        # This file
 ```
@@ -744,6 +748,15 @@ Solution:
 1. Increase validation.n_splits to 4-5
 2. Run more trials (n_trials: 100)
 3. Delete best_hyperparameters.yaml and re-tune
+```
+
+**5. "Yearly seasonality shows as 0 in validation charts"**
+```
+Cause: Validation train_window_days too short (730 days = 2 years borderline)
+Solution: Increase training window in config.yaml:
+validation:
+  train_window_days: 1095  # 3 years for robust yearly seasonality
+Note: This reduces max possible validation folds but improves reliability
 ```
 
 **4. "High WAPE (>20%)"**
