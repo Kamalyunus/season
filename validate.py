@@ -21,16 +21,15 @@ def create_cv_splits(category_df, config):
 
     n_splits = config.get('validation.n_splits')
     horizon = config.get('forecast.horizon_days')
-    gap = config.get('validation.gap_days')
     min_train = config.get('validation.min_train_days')
 
-    available = total_days - min_train - horizon - gap
+    available = total_days - min_train - horizon
     step = max(30, available // (n_splits + 1))
 
     splits = []
     for i in range(n_splits):
-        train_end = max_date - pd.Timedelta(days=(n_splits - i) * step + horizon + gap)
-        test_start = train_end + pd.Timedelta(days=gap + 1)
+        train_end = max_date - pd.Timedelta(days=(n_splits - i) * step + horizon)
+        test_start = train_end + pd.Timedelta(days=1)
         test_end = test_start + pd.Timedelta(days=horizon - 1)
 
         if train_end >= min_date + pd.Timedelta(days=min_train):
@@ -70,8 +69,7 @@ def validate(category_df, config):
 
     splits = create_cv_splits(category_df, config)
     print(f"\nFolds: {len(splits)}")
-    print(f"Forecast horizon: {config.get('forecast.horizon_days')} days")
-    print(f"Gap: {config.get('validation.gap_days')} days\n")
+    print(f"Forecast horizon: {config.get('forecast.horizon_days')} days\n")
 
     all_results = []
     all_predictions = []

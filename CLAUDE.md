@@ -122,7 +122,6 @@ All configuration is in `config.yaml`. Key sections:
 
 **Validation**:
 - `n_splits`: 3-5 (more = robust but slower)
-- `gap_days`: Buffer between train/test (0 = no buffer)
 
 ## Validation Methodology
 

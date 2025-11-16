@@ -408,8 +408,7 @@ lightgbm:
 
 # Validation
 validation:
-  n_splits: 4                    # Number of CV folds
-  gap_days: 0                    # Gap between train/test
+  n_splits: 3                    # Number of CV folds
   min_train_days: 180            # Minimum training data required
 
 # Hyperparameter Tuning

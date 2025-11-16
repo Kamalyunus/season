@@ -29,15 +29,14 @@ class HyperparameterTuner:
 
         min_train = self.config.get('validation.min_train_days')
         horizon = self.config.get('forecast.horizon_days')
-        gap = self.config.get('validation.gap_days')
 
-        available_days = total_days - min_train - horizon - gap
+        available_days = total_days - min_train - horizon
         step_size = max(30, available_days // (n_splits + 1))
 
         splits = []
         for i in range(n_splits):
-            train_end = max_date - pd.Timedelta(days=(n_splits - i) * step_size + horizon + gap)
-            test_start = train_end + pd.Timedelta(days=gap + 1)
+            train_end = max_date - pd.Timedelta(days=(n_splits - i) * step_size + horizon)
+            test_start = train_end + pd.Timedelta(days=1)
             test_end = test_start + pd.Timedelta(days=horizon - 1)
 
             if train_end >= min_date + pd.Timedelta(days=min_train):

@@ -77,7 +77,6 @@ lightgbm:
 # Validation
 validation:
   n_splits: 3  # Number of time series CV folds
-  gap_days: 0  # Gap between train and test
   min_train_days: 180  # Minimum training data required
 
 # Hyperparameter Tuning (Optuna)
