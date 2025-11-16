@@ -155,8 +155,9 @@ class HyperparameterTuner:
         # Create CV splits
         cv_splits = self.create_cv_splits(category_df)
         print(f"\nCross-validation folds: {len(cv_splits)}")
-        for i, (train_end, test_start, test_end) in enumerate(cv_splits):
-            print(f"  Fold {i+1}: Train until {train_end.date()}, Test: {test_start.date()} to {test_end.date()}")
+        for i, (train_start, train_end, test_start, test_end) in enumerate(cv_splits):
+            train_days = (train_end - train_start).days + 1
+            print(f"  Fold {i+1}: Train [{train_start.date()} to {train_end.date()}] ({train_days} days), Test: [{test_start.date()} to {test_end.date()}]")
 
         n_trials = self.config.get('optuna.n_trials')
         timeout = self.config.get('optuna.timeout_seconds')

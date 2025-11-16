@@ -31,21 +31,20 @@ features:
   min_non_nan_pct: 0.1
 lightgbm:
   objective: regression
-  n_estimators: 653
-  learning_rate: 0.09715278810793519
-  max_depth: 9
-  num_leaves: 19
-  min_child_samples: 44
-  subsample: 0.874595614745533
+  n_estimators: 848
+  learning_rate: 0.09945172875654647
+  max_depth: 11
+  num_leaves: 37
+  min_child_samples: 40
+  subsample: 0.958133325863102
   subsample_freq: 1
-  colsample_bytree: 0.6317619483839668
-  reg_alpha: 0.7871225587874597
-  reg_lambda: 0.2958805407892789
+  colsample_bytree: 0.6170479765853718
+  reg_alpha: 0.7051120443052624
+  reg_lambda: 0.17924648416867145
   random_state: 42
 validation:
   n_splits: 3
-  gap_days: 0
-  min_train_days: 180
+  train_window_days: 730
 optuna:
   n_trials: 50
   timeout_seconds: 3600
