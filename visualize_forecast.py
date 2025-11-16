@@ -4,10 +4,8 @@ Shows if the model captures seasonal patterns
 """
 
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from matplotlib.patches import Rectangle
 from forecaster import CategoryForecaster
 import warnings
 warnings.filterwarnings('ignore')
@@ -82,8 +80,6 @@ def plot_forecast_vs_actual(category_df, predictions_df, output_path='forecast_a
                 hist_plot = hist_before_test.tail(lookback_days)
             else:
                 hist_plot = hist_before_test
-
-            plot_start = hist_plot['date'].min()
 
             # === Plot 1: Full Historical Sales + Forecast vs Actual ===
             ax1 = axes[0]
@@ -267,7 +263,7 @@ def plot_feature_importance(category_df, output_path='feature_importance.png'):
     print(f"✓ Extracted importance for {len(features)} features")
 
     # Plot
-    fig, ax = plt.subplots(figsize=(10, max(8, len(features) * 0.3)))
+    _, ax = plt.subplots(figsize=(10, max(8, len(features) * 0.3)))
 
     colors = plt.cm.viridis(importance_df['importance'] / importance_df['importance'].max())
 
@@ -294,7 +290,7 @@ def plot_feature_importance(category_df, output_path='feature_importance.png'):
     print("TOP 10 MOST IMPORTANT FEATURES")
     print("="*60)
     top_features = importance_df.tail(10).iloc[::-1]
-    for idx, row in top_features.iterrows():
+    for _, row in top_features.iterrows():
         print(f"  {row['feature']:30s} {row['importance']:10.1f}")
     print("="*60)
 
