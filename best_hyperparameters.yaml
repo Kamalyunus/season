@@ -7,7 +7,7 @@ preprocessing:
   min_skus_per_category: 10
   instock_threshold: 0.85
 forecast:
-  horizon_days: 7
+  horizon_days: 21
 decomposition:
   weekly_period: 7
   yearly_period: 365
@@ -27,23 +27,24 @@ features:
   - 28
   rolling_windows:
   - 7
+  - 14
   - 28
   min_non_nan_pct: 0.1
 lightgbm:
   objective: regression
-  n_estimators: 723
-  learning_rate: 0.09965777014765373
-  max_depth: 11
-  num_leaves: 15
-  min_child_samples: 31
-  subsample: 0.873311029162794
+  n_estimators: 877
+  learning_rate: 0.09831042473392522
+  max_depth: 5
+  num_leaves: 37
+  min_child_samples: 30
+  subsample: 0.6105066813926707
   subsample_freq: 1
-  colsample_bytree: 0.7636737330600389
-  reg_alpha: 0.1829003378141002
-  reg_lambda: 0.45567676185268385
+  colsample_bytree: 0.7264088822121673
+  reg_alpha: 0.19036011092720526
+  reg_lambda: 0.7080265418069753
   random_state: 42
 validation:
-  n_splits: 5
+  n_splits: 30
   train_window_days: 800
 optuna:
   n_trials: 50

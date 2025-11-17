@@ -22,7 +22,7 @@ preprocessing:
 
 # Forecasting Parameters
 forecast:
-  horizon_days: 7  # How many days ahead to forecast
+  horizon_days: 21  # How many days ahead to forecast
 
 # Time Series Decomposition (MSTL)
 decomposition:
@@ -48,10 +48,10 @@ trend:
 # Feature Engineering
 features:
   # Lag features (in days)
-  lag_days: [1, 7, 14, 28]  # lag_1 = yesterday's sales (most predictive)
+  lag_days: [1, 7, 14, 28]  
 
   # Rolling window features (in days)
-  rolling_windows: [7, 28]
+  rolling_windows: [7, 14, 28]
 
   # Minimum percentage of non-NaN values to include lag feature
   min_non_nan_pct: 0.1
@@ -76,7 +76,7 @@ lightgbm:
 
 # Validation
 validation:
-  n_splits: 60  # Number of time series CV folds
+  n_splits: 30  # Number of time series CV folds
   train_window_days: 800  # 3 years for robust yearly seasonality (was 730)  # Fixed training window size (must be >= 730 for yearly seasonality)
 
 # Hyperparameter Tuning (Optuna)
