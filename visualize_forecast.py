@@ -7,11 +7,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from forecaster import CategoryForecaster
+from config_loader import load_config
 import warnings
 warnings.filterwarnings('ignore')
 
 
-def plot_forecast_vs_actual(category_df, predictions_df, output_path='forecast_analysis.png'):
+def plot_forecast_vs_actual(category_df, predictions_df, output_path='forecast_analysis.png', lookback_days=None):
     """
     Create comprehensive visualization showing:
     1. Historical sales with decomposed components
@@ -26,7 +27,14 @@ def plot_forecast_vs_actual(category_df, predictions_df, output_path='forecast_a
         Validation predictions with actuals
     output_path : str
         Where to save the plot
+    lookback_days : int, optional
+        Number of days of historical data to show before test period.
+        If None, reads from config.yaml (default: 180)
     """
+    # Load config if lookback_days not provided
+    if lookback_days is None:
+        config = load_config()
+        lookback_days = config.get('visualization.lookback_days', 180)
 
     # Get unique categories and folds
     categories = predictions_df['category'].unique()
@@ -74,8 +82,7 @@ def plot_forecast_vs_actual(category_df, predictions_df, output_path='forecast_a
             # Get historical data up to test start
             hist_before_test = hist_data[hist_data['date'] < test_start]
 
-            # Limit to last 180 days before test for better visibility
-            lookback_days = 180
+            # Limit to last N days before test for better visibility
             if len(hist_before_test) > lookback_days:
                 hist_plot = hist_before_test.tail(lookback_days)
             else:

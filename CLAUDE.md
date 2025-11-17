@@ -121,9 +121,15 @@ All configuration is in `config.yaml`. Key sections:
 - `temp_sensitivity`: 0.01 (shelf-stable) to 0.05 (ice cream, seasonal produce)
 - `yearly_seasonality_strategy`: 'last_year' (default, recent patterns) or 'average' (stable long-term)
 
+**Trend** (affects trend forecasting):
+- `smoothing_level`: Controls level smoothing (0-1)
+- `smoothing_trend`: Controls trend smoothing (0-1)
+- `damping_trend`: Prevents over-extrapolation (0.8-0.98)
+
 **Features** (affects model inputs):
-- `lag_days`: Recent lags are most important (7, 14, 28)
-- `rolling_windows`: Captures trends (7, 28)
+- `lag_days`: Recent lags are most important (1, 7, 14, 28)
+- `rolling_windows`: Captures trends (7, 14, 28)
+- `min_non_nan_pct`: Minimum non-null percentage to include feature
 
 **LightGBM** (auto-overridden by tuned params):
 - Default values in config.yaml
@@ -131,7 +137,11 @@ All configuration is in `config.yaml`. Key sections:
 - To revert to defaults: delete `best_hyperparameters.yaml`
 
 **Validation**:
-- `n_splits`: 3-5 (more = robust but slower)
+- `n_splits`: Number of CV folds (default: 30 for full seasonal coverage)
+- `train_window_days`: Fixed training window size (default: 800 days)
+
+**Visualization**:
+- `lookback_days`: Historical days to show before test period (default: 180)
 
 ## Validation Methodology
 
@@ -338,6 +348,17 @@ The following enhancements were made to improve forecast accuracy and production
 **Keeps**: Template CSVs (`*_template.csv`) for user reference
 **Excludes**: Generated CSVs, PNGs, best_hyperparameters.yaml (regenerated)
 
+### 10. Configuration Cleanup (2025-11)
+**Removed unused parameters from config.yaml**:
+- **`data` section** (n_categories, n_skus_per_category, n_days, start_date): Only used by demo_synthetic_data.py utility, which has its own defaults
+- **`trend.use_exponential_smoothing`**: Was never read; exponential smoothing always active
+- **`visualization.dpi`** and **`visualization.figsize_per_category`**: Were hardcoded in visualize_forecast.py
+
+**Made configurable**:
+- **`visualization.lookback_days`**: Now properly read from config.yaml (default: 180) instead of being hardcoded
+
+**Rationale**: Removes configuration dead code and ensures all visualization parameters are truly configurable
+
 ## Updated Feature Importance (After lag_1 Addition)
 
 Expected top features after improvements:
@@ -379,6 +400,10 @@ input:
   future_prices: "future_prices.csv"      # NEW: optional
   future_promos: "future_promos.csv"      # NEW: optional
   future_temperature: "future_temperature.csv"  # NEW: optional
+
+# Visualization
+visualization:
+  lookback_days: 180  # Days of history to show before forecast
 ```
 
 ## Validation Consistency

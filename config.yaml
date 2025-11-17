@@ -1,13 +1,6 @@
 # Configuration File for Category Forecasting Pipeline
 # ======================================================
 
-# Data Generation (for synthetic data demo)
-data:
-  n_categories: 3
-  n_skus_per_category: 15
-  n_days: 1460  # 4 years
-  start_date: "2022-01-01"
-
 # Data Quality & Preprocessing
 preprocessing:
   # Minimum number of SKUs required for a category to be included
@@ -53,7 +46,6 @@ trend:
   smoothing_level: 0.8
   smoothing_trend: 0.2
   damping_trend: 0.95  # Damping parameter (0.8-0.98): flattens trend over forecast horizon
-  use_exponential_smoothing: true
 
 # Feature Engineering
 features:
@@ -125,5 +117,3 @@ output:
 # Visualization
 visualization:
   lookback_days: 180  # Days of history to show before forecast
-  dpi: 300
-  figsize_per_category: [16, 12]
