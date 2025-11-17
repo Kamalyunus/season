@@ -38,6 +38,11 @@ decomposition:
   # Recommended: 0.01-0.05 for fresh products
   temp_sensitivity: 0.02  # Default: moderate temperature effect
 
+  # Yearly seasonality strategy for forecasting
+  # 'last_year': Use only the most recent year's pattern (recommended for dynamic markets, easier to explain)
+  # 'average': Average across all historical years (more stable, smooths out anomalies)
+  yearly_seasonality_strategy: 'last_year'
+
 # Trend Forecasting (Exponential Smoothing)
 trend:
   smoothing_level: 0.8

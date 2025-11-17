@@ -359,26 +359,38 @@ class CategoryForecaster:
             # External features
             df['temperature'] = future_temps.get(cat, [data['temperature'].mean()] * self.horizon)
 
-            # Get base yearly seasonal pattern (repeat last year)
+            # Get base yearly seasonal pattern
             hist_seasonal_yearly = self.decompositions[cat]['seasonal_yearly']
             hist_data = self.decompositions[cat]['data']
 
-            # Use only the most recent year of data (last 365 days)
-            last_year_cutoff = hist_data['date'].max() - pd.Timedelta(days=365)
-            last_year_mask = hist_data['date'] > last_year_cutoff
+            # Determine strategy from config
+            strategy = self.config.get('decomposition.yearly_seasonality_strategy', 'last_year')
 
             # Create mapping from day_of_year to seasonal value
             seasonal_map = {}
-            for doy in range(1, 366):
-                # Get values for this day of year from LAST YEAR ONLY
-                mask = last_year_mask & (hist_data['date'].dt.dayofyear == doy)
-                if mask.any():
-                    seasonal_map[doy] = hist_seasonal_yearly[mask].mean()
-                else:
-                    # Fallback: if day not in last year (edge case), use all historical
-                    mask_all = hist_data['date'].dt.dayofyear == doy
-                    if mask_all.any():
-                        seasonal_map[doy] = hist_seasonal_yearly[mask_all].mean()
+
+            if strategy == 'last_year':
+                # Use only the most recent year of data (last 365 days)
+                last_year_cutoff = hist_data['date'].max() - pd.Timedelta(days=365)
+                last_year_mask = hist_data['date'] > last_year_cutoff
+
+                for doy in range(1, 366):
+                    # Get values for this day of year from LAST YEAR ONLY
+                    mask = last_year_mask & (hist_data['date'].dt.dayofyear == doy)
+                    if mask.any():
+                        seasonal_map[doy] = hist_seasonal_yearly[mask].mean()
+                    else:
+                        # Fallback: if day not in last year (edge case), use all historical
+                        mask_all = hist_data['date'].dt.dayofyear == doy
+                        if mask_all.any():
+                            seasonal_map[doy] = hist_seasonal_yearly[mask_all].mean()
+
+            else:  # strategy == 'average'
+                # Average across all historical years
+                for doy in range(1, 366):
+                    mask = hist_data['date'].dt.dayofyear == doy
+                    if mask.any():
+                        seasonal_map[doy] = hist_seasonal_yearly[mask].mean()
 
             # Apply base seasonal pattern
             base_seasonal = df['day_of_year'].map(

@@ -6,6 +6,7 @@ Minimal, production-ready forecasting system using MSTL decomposition, temperatu
 
 Recent improvements for better accuracy and production readiness:
 
+- **Configurable Yearly Seasonality**: Choose between last year's pattern or multi-year average (`yearly_seasonality_strategy: 'last_year'`)
 - **Damped Trend Forecasting**: Prevents unrealistic trend extrapolation (configurable `damping_trend: 0.95`)
 - **lag_1 Feature Added**: Yesterday's sales now included (`lag_days: [1, 7, 14, 28]`)
 - **Future Inputs from CSV**: Optional `future_prices.csv`, `future_promos.csv`, `future_temperature.csv` for planned business data
@@ -343,7 +344,62 @@ For ice cream:
   Modulated: +50 × 1.04 = +52 units
 ```
 
-### 4. Automatic Hyperparameter Loading
+### 4. Yearly Seasonality Strategy
+Choose how to apply yearly seasonality patterns to future forecasts.
+
+**Configuration**:
+```yaml
+decomposition:
+  yearly_seasonality_strategy: 'last_year'  # or 'average'
+```
+
+**Two Strategies Available**:
+
+**A) Last Year Only (Recommended, Default)**
+```yaml
+yearly_seasonality_strategy: 'last_year'
+```
+- Uses only the most recent 365 days of yearly seasonal pattern
+- Forecasts assume "next year will follow last year's pattern"
+- **Best for**: Dynamic markets, evolving customer behavior, business changes
+- **Benefits**:
+  - More responsive to recent trends
+  - Easier to explain to stakeholders
+  - Captures latest market conditions
+  - Reflects recent assortment/competition changes
+
+**B) Multi-Year Average**
+```yaml
+yearly_seasonality_strategy: 'average'
+```
+- Averages yearly seasonality across all historical years in training data
+- Smooths out year-to-year variations
+- **Best for**: Stable markets, mature categories, filtering anomalies
+- **Benefits**:
+  - More robust to unusual events in single year
+  - Smoother patterns
+  - Less noise
+
+**Example**:
+```
+Forecasting February 10, 2026:
+
+Strategy 'last_year':
+  - Uses Feb 10, 2025 seasonal value only
+  - Then modulates by 2026 temperature forecast
+  - Business interpretation: "Assuming similar pattern to last year"
+
+Strategy 'average':
+  - Averages Feb 10 from 2024, 2025, and other years in data
+  - Then modulates by 2026 temperature forecast
+  - Business interpretation: "Using typical February 10 pattern"
+```
+
+**When to Use Which**:
+- **Last Year**: Fresh products, fashion, evolving preferences, recent business changes
+- **Average**: Commodities, stable categories, long-established patterns
+
+### 5. Automatic Hyperparameter Loading
 **Once you run tuning, optimal parameters are used automatically - no manual copying!**
 
 **How it works**:
@@ -377,6 +433,7 @@ decomposition:
   yearly_period: 365
   seasonal_smoothing: 13
   temp_sensitivity: 0.02         # Temperature effect strength (0.0-0.1)
+  yearly_seasonality_strategy: 'last_year'  # 'last_year' or 'average'
 
 # Trend Forecasting (Exponential Smoothing)
 trend:
