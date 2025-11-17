@@ -37,9 +37,9 @@ The `CategoryForecaster` class orchestrates 7 sequential steps:
 ```
 SKU-Day Data
     ↓
-1. aggregate_to_category()      # Filter categories, interpolate stockout sales
+1. aggregate_to_category()      # Filter categories, interpolate stockout sales (SKU or category level)
     ↓
-2. decompose()                   # MSTL: extract trend + weekly + yearly seasonality
+2. decompose()                   # MSTL: extract trend + weekly + yearly seasonality (on training data)
     ↓
 3. forecast_trend()              # Exponential smoothing on trend component
     ↓
@@ -49,7 +49,7 @@ SKU-Day Data
     ↓
 6. train_lgbm()                  # Train LightGBM on residuals (auto-loads tuned params)
     ↓
-7. generate_forecast()           # Combine components + LightGBM prediction
+7. generate_forecast()           # Combine components + LightGBM prediction (uses last_year or average strategy)
 ```
 
 ### Key Design Decisions
@@ -76,7 +76,15 @@ SKU-Day Data
 **4. Preprocessing Quality Controls**
 - `min_skus_per_category`: Filter noisy categories with insufficient SKUs
 - `instock_threshold`: Linear interpolation when instock < 85% (estimates true demand during stockouts)
+- `interpolation_level`: 'sku' (default, recommended) or 'category' - where to apply stockout correction
 - `instock_rate` is NOT used as a model feature (prevents data leakage)
+
+**5. Yearly Seasonality Strategy**
+- `yearly_seasonality_strategy`: 'last_year' (default) or 'average'
+- **'last_year'**: Uses only the most recent 365 days of seasonal pattern (recommended for dynamic markets)
+- **'average'**: Averages across all historical years (better for stable markets with high substitution)
+- Configuration: `decomposition.yearly_seasonality_strategy` in config.yaml
+- Applied during `generate_forecast()` when mapping day-of-year to seasonal values
 
 ### File Roles
 
@@ -107,9 +115,11 @@ All configuration is in `config.yaml`. Key sections:
 **Preprocessing** (affects data quality):
 - `min_skus_per_category`: 5-20 depending on retailer size
 - `instock_threshold`: 0.80-0.95 (higher = more sensitive to stockouts)
+- `interpolation_level`: 'sku' (default, granular) or 'category' (high substitution scenarios)
 
 **Decomposition** (affects seasonality):
 - `temp_sensitivity`: 0.01 (shelf-stable) to 0.05 (ice cream, seasonal produce)
+- `yearly_seasonality_strategy`: 'last_year' (default, recent patterns) or 'average' (stable long-term)
 
 **Features** (affects model inputs):
 - `lag_days`: Recent lags are most important (7, 14, 28)
@@ -199,7 +209,41 @@ Minimum SKUs: 10 per category (configurable)
 
 The following enhancements were made to improve forecast accuracy and production readiness:
 
-### 1. Fixed MSTL Seasonality Logic (forecaster.py:125-133)
+### 1. SKU-Level Interpolation (forecaster.py:95-120, config.yaml:26)
+**Addition**: `interpolation_level: 'sku'` parameter for stockout correction
+**Options**:
+- **'sku' (default)**: Interpolates each SKU individually before aggregation
+- **'category'**: Interpolates at category level after aggregation (original behavior)
+
+**Rationale**:
+- SKU-level captures true demand without signal loss from partial assortment stockouts
+- Better handles mixed substitution scenarios (some SKUs substitute, others don't)
+- Prevents category-level averaging from masking individual SKU stockout patterns
+
+**When to use**:
+- **'sku'**: Most retail scenarios, fresh products, unique SKUs, mixed substitution
+- **'category'**: Pure commodities with perfect substitution, legacy compatibility
+
+**Implementation**: Two new methods `_interpolate_sku_level()` and `_interpolate_category_level()`
+
+### 2. Configurable Yearly Seasonality Strategy (forecaster.py:366-393, config.yaml:44)
+**Addition**: `yearly_seasonality_strategy: 'last_year'` parameter
+**Options**:
+- **'last_year' (default)**: Uses only most recent 365 days of yearly seasonal pattern
+- **'average'**: Averages across all historical years (original behavior)
+
+**Rationale**:
+- Recent year typically more relevant for forecasting (business changes, customer preferences)
+- Easier to explain to stakeholders: "next year follows last year's pattern"
+- More responsive to market trends while still temperature-modulated
+
+**When to use**:
+- **'last_year'**: Dynamic markets, evolving preferences, recent business changes
+- **'average'**: Stable categories, filtering out anomalies, long-term patterns
+
+**Implementation**: Reads config in `generate_forecast()`, creates day-of-year mapping from either last year or all years
+
+### 3. Fixed MSTL Seasonality Logic (forecaster.py:125-133)
 **Issue**: When MSTL returned 1D output with 730+ days, code incorrectly assumed yearly-only seasonality
 **Fix**: Now correctly treats 1D output as weekly seasonality (yearly extraction failed)
 **Rationale**: Weekly patterns are more fundamental; if yearly is weak/noisy, MSTL extracts only weekly
@@ -285,6 +329,17 @@ Expected top features after improvements:
 
 All new features are in `config.yaml`:
 ```yaml
+# Preprocessing (NEW: SKU-level interpolation)
+preprocessing:
+  min_skus_per_category: 10
+  instock_threshold: 0.85
+  interpolation_level: 'sku'  # NEW: 'sku' (default) or 'category'
+
+# Decomposition (NEW: yearly seasonality strategy)
+decomposition:
+  temp_sensitivity: 0.02
+  yearly_seasonality_strategy: 'last_year'  # NEW: 'last_year' (default) or 'average'
+
 # Trend forecasting (NEW: damped trend)
 trend:
   smoothing_level: 0.8
