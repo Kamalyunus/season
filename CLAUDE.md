@@ -310,7 +310,30 @@ The following enhancements were made to improve forecast accuracy and production
 - Slower (~5-10× more time per trial)
 - More accurate (tunes for production behavior, not just LightGBM)
 
-### 8. Improved .gitignore
+### 8. Tuning with Full Seasonal Coverage (tune_hyperparameters.py:24-82)
+**Change**: Hyperparameter tuning now uses same n_splits as validation
+**Previous**: Hardcoded to 3 CV splits regardless of config
+**New**: Reads `validation.n_splits` from config.yaml (default: 30 splits)
+
+**Rationale**:
+- For seasonal categories, 3 splits may only capture one seasonal phase (e.g., all "ramp up" or all "peak season")
+- Hyperparameters tuned on limited seasonal variation may not generalize
+- 30 splits ensures tuning across multiple seasonal cycles and phases
+- Matches validate.py methodology for consistency
+
+**Benefits**:
+- Hyperparameters robust across full seasonal cycle
+- Prevents overfitting to specific seasonal phases
+- Same evaluation methodology as production validation
+
+**Trade-offs**:
+- Significantly longer tuning time (e.g., 50 trials × 30 folds = 1,500 pipeline runs vs 150)
+- More realistic performance estimates
+- Can reduce n_splits in config if faster exploratory tuning needed
+
+**Implementation**: Method now reads `self.config.get('validation.n_splits')` with validation checks
+
+### 9. Improved .gitignore
 **Additions**: Comprehensive exclusions for output files, virtual envs, IDEs
 **Keeps**: Template CSVs (`*_template.csv`) for user reference
 **Excludes**: Generated CSVs, PNGs, best_hyperparameters.yaml (regenerated)
@@ -362,7 +385,9 @@ input:
 
 All three scripts now use the same methodology:
 - **run.py**: Production forecasting with optional CSV inputs
-- **validate.py**: Time series CV with actual test data inputs + weighted metrics
-- **tune_hyperparameters.py**: Full pipeline per trial + weighted objective
+- **validate.py**: Time series CV with actual test data inputs + weighted metrics + configurable n_splits
+- **tune_hyperparameters.py**: Full pipeline per trial + weighted objective + **same n_splits as validate.py**
 
-This ensures tuned hyperparameters are optimal for production forecasting.
+**Key consistency**: Both validate.py and tune_hyperparameters.py read `validation.n_splits` from config.yaml, ensuring hyperparameters are tuned on the same seasonal coverage as final validation. This prevents tuning bias from limited seasonal phases.
+
+This ensures tuned hyperparameters are optimal for production forecasting across all seasonal conditions.

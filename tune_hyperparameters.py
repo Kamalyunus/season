@@ -21,19 +21,52 @@ class HyperparameterTuner:
         self.config = load_config(config_path)
         self.best_params = {}
 
-    def create_cv_splits(self, category_df, n_splits=3):
+    def create_cv_splits(self, category_df):
         """Create time series CV splits with FIXED sliding window
 
         Matches validate.py strategy:
-        - Fixed training window size (train_window_days = 730)
+        - Uses n_splits from config (same as validate.py)
+        - Fixed training window size (train_window_days)
         - Works backward from most recent data
         - Step size = forecast horizon (contiguous test periods)
         """
         max_date = category_df['date'].max()
         min_date = category_df['date'].min()
+        total_days = (max_date - min_date).days
 
+        n_splits = self.config.get('validation.n_splits')
         train_window_days = self.config.get('validation.train_window_days')
         horizon = self.config.get('forecast.horizon_days')
+
+        # Validate minimum training window for MSTL
+        if train_window_days < 730:
+            raise ValueError(f"train_window_days must be >= 730 for yearly seasonality. Got {train_window_days}")
+
+        # Calculate maximum possible splits
+        max_possible_splits = (total_days - train_window_days) // horizon
+
+        # Inform user about data capacity
+        print(f"\nTuning Data Summary:")
+        print(f"  Total days available: {total_days} (from {min_date.date()} to {max_date.date()})")
+        print(f"  Training window size: {train_window_days} days")
+        print(f"  Forecast horizon: {horizon} days")
+        print(f"  Requested splits: {n_splits}")
+        print(f"  Maximum possible splits: {max_possible_splits}")
+
+        if n_splits > max_possible_splits:
+            print(f"\n⚠ WARNING: Requested {n_splits} splits but only {max_possible_splits} possible with current data.")
+            print(f"  Using {max_possible_splits} splits instead.")
+            n_splits = max_possible_splits
+        elif n_splits < max_possible_splits:
+            print(f"  Note: Could use up to {max_possible_splits} splits with available data")
+
+        # Validate we have enough data
+        required_days = train_window_days + (n_splits * horizon)
+        if total_days < required_days:
+            raise ValueError(
+                f"Insufficient data: need {required_days} days for {n_splits} folds, "
+                f"have {total_days} days. Reduce n_splits or increase data."
+            )
 
         # Step size = forecast horizon (contiguous test periods)
         step = horizon
@@ -166,7 +199,9 @@ class HyperparameterTuner:
         print("\n" + "="*80)
         print("Tuning LightGBM Parameters")
         print("="*80)
-        print("Note: This may take longer as each trial runs the full pipeline")
+        print(f"Note: Each trial runs full pipeline on {len(cv_splits)} folds")
+        print(f"      Estimated iterations: {n_trials} trials × {len(cv_splits)} folds = {n_trials * len(cv_splits)} pipeline runs")
+        print(f"      This ensures hyperparameters are robust across seasonal phases")
 
         study_lgbm = optuna.create_study(direction='minimize', sampler=TPESampler(seed=42))
         study_lgbm.optimize(
