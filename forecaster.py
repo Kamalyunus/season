@@ -361,15 +361,24 @@ class CategoryForecaster:
 
             # Get base yearly seasonal pattern (repeat last year)
             hist_seasonal_yearly = self.decompositions[cat]['seasonal_yearly']
+            hist_data = self.decompositions[cat]['data']
+
+            # Use only the most recent year of data (last 365 days)
+            last_year_cutoff = hist_data['date'].max() - pd.Timedelta(days=365)
+            last_year_mask = hist_data['date'] > last_year_cutoff
 
             # Create mapping from day_of_year to seasonal value
-            hist_data = self.decompositions[cat]['data']
             seasonal_map = {}
             for doy in range(1, 366):
-                # Get all historical values for this day of year
-                mask = hist_data['date'].dt.dayofyear == doy
+                # Get values for this day of year from LAST YEAR ONLY
+                mask = last_year_mask & (hist_data['date'].dt.dayofyear == doy)
                 if mask.any():
                     seasonal_map[doy] = hist_seasonal_yearly[mask].mean()
+                else:
+                    # Fallback: if day not in last year (edge case), use all historical
+                    mask_all = hist_data['date'].dt.dayofyear == doy
+                    if mask_all.any():
+                        seasonal_map[doy] = hist_seasonal_yearly[mask_all].mean()
 
             # Apply base seasonal pattern
             base_seasonal = df['day_of_year'].map(
