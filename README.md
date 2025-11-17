@@ -6,6 +6,7 @@ Minimal, production-ready forecasting system using MSTL decomposition, temperatu
 
 Recent improvements for better accuracy and production readiness:
 
+- **Day-of-Month Features**: Captures payday effects and end-of-month shopping patterns (`day_of_month`, `is_month_start`, `is_month_end`)
 - **SKU-Level Interpolation**: Apply stockout correction at SKU level before aggregation (`interpolation_level: 'sku'`)
 - **Configurable Yearly Seasonality**: Choose between last year's pattern or multi-year average (`yearly_seasonality_strategy: 'last_year'`)
 - **Damped Trend Forecasting**: Prevents unrealistic trend extrapolation (configurable `damping_trend: 0.95`)
@@ -16,6 +17,7 @@ Recent improvements for better accuracy and production readiness:
 - **Fixed MSTL Logic**: Correctly handles 1D seasonality output (weekly-only when yearly extraction fails)
 - **Enhanced Synthetic Data**: Stronger yearly seasonality (60% amplitude) and lower noise (8%) for realistic testing
 - **Organized Visualizations**: All plots saved to `forecast_plots/` with date-based naming and metrics in titles
+- **Configuration Cleanup**: Removed unused parameters, made `lookback_days` properly configurable
 - **Training Progress**: LightGBM now shows training progress (verbose mode enabled)
 
 See [CLAUDE.md](CLAUDE.md#recent-improvements-2025-11) for detailed technical notes.

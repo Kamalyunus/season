@@ -231,8 +231,11 @@ class CategoryForecaster:
             # Temporal features
             df['day_of_week'] = df['date'].dt.dayofweek
             df['day_of_year'] = df['date'].dt.dayofyear
+            df['day_of_month'] = df['date'].dt.day
             df['month'] = df['date'].dt.month
             df['is_weekend'] = (df['day_of_week'] >= 5).astype(int)
+            df['is_month_start'] = (df['day_of_month'] <= 7).astype(int)  # Payday effect (first week)
+            df['is_month_end'] = (df['day_of_month'] >= 24).astype(int)   # End-of-month shopping
 
             # Cyclic encoding
             df['dow_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
@@ -388,8 +391,11 @@ class CategoryForecaster:
             # Temporal features
             df['day_of_week'] = df['date'].dt.dayofweek
             df['day_of_year'] = df['date'].dt.dayofyear
+            df['day_of_month'] = df['date'].dt.day
             df['month'] = df['date'].dt.month
             df['is_weekend'] = (df['day_of_week'] >= 5).astype(int)
+            df['is_month_start'] = (df['day_of_month'] <= 7).astype(int)  # Payday effect (first week)
+            df['is_month_end'] = (df['day_of_month'] >= 24).astype(int)   # End-of-month shopping
 
             df['dow_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
             df['dow_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)

@@ -359,15 +359,34 @@ The following enhancements were made to improve forecast accuracy and production
 
 **Rationale**: Removes configuration dead code and ensures all visualization parameters are truly configurable
 
-## Updated Feature Importance (After lag_1 Addition)
+### 11. Day-of-Month Features (2025-11)
+**Addition**: Three new temporal features in `prepare_features()` (forecaster.py:234-238, 394-398)
+- **`day_of_month`**: Numeric day (1-31)
+- **`is_month_start`**: Binary flag for days 1-7 (payday effect - first week of month)
+- **`is_month_end`**: Binary flag for days 24-31 (end-of-month shopping surge)
+
+**Rationale**:
+- Captures monthly shopping patterns driven by salary cycles
+- First week (payday): Increased spending on groceries and essentials
+- Last week (pre-payday): Budget constraints or stocking up before next cycle
+- Particularly important for fresh products and high-involvement categories
+
+**Expected impact**: 0.5-1.5pp WAPE improvement, especially for categories with strong monthly cycles
+
+**Implementation**: Added to both training (`prepare_features()`) and forecasting (`generate_forecast()`) pipelines for consistency
+
+## Updated Feature Importance (After Recent Additions)
 
 Expected top features after improvements:
-1. **`sales_lag_1`**: Yesterday's sales (NEW - most recent)
+1. **`sales_lag_1`**: Yesterday's sales (most recent)
 2. `sales_lag_7`: Last week's sales
 3. `seasonal_weekly`: Day-of-week pattern
 4. `sales_lag_14`: Two weeks ago
 5. `seasonal_yearly`: Annual seasonality (temp-modulated)
-6. `price_ratio`: Price changes vs 28-day average
+6. **`is_month_start`** or **`is_month_end`**: Payday/end-of-month effects (NEW)
+7. `price_ratio`: Price changes vs 28-day average
+
+**Note**: `day_of_month` may rank high if monthly patterns are strong; `is_month_start`/`is_month_end` provide binary encoding for easier model interpretation
 
 ## Configuration Summary (Post-Improvements)
 
