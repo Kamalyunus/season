@@ -38,6 +38,7 @@ class CategoryForecaster:
         # Get config parameters
         min_skus = self.config.get('preprocessing.min_skus_per_category', 10)
         instock_threshold = self.config.get('preprocessing.instock_threshold', 0.85)
+        interpolation_level = self.config.get('preprocessing.interpolation_level', 'sku')
 
         # Count SKUs per category to filter noisy categories
         sku_count = sku_df.groupby('category')['sku_id'].nunique()
@@ -55,6 +56,11 @@ class CategoryForecaster:
             raise ValueError(f"No categories have >= {min_skus} SKUs. Lower min_skus_per_category in config.")
 
         print(f"  Retained {len(valid_categories)}/{len(sku_count)} categories with >= {min_skus} SKUs")
+
+        # Apply SKU-level interpolation if configured
+        if interpolation_level == 'sku':
+            print(f"\nApplying SKU-level sales interpolation (threshold: {instock_threshold})...")
+            sku_df = self._interpolate_sku_level(sku_df, instock_threshold)
 
         def weighted_avg(group, col, weight='sales'):
             return np.average(group[col], weights=group[weight]) if group[weight].sum() > 0 else group[col].mean()
@@ -76,10 +82,47 @@ class CategoryForecaster:
         agg['date'] = pd.to_datetime(agg['date'])
         agg = agg.sort_values(['category', 'date']).reset_index(drop=True)
 
-        # Apply linear interpolation to sales when instock rate is low
-        print(f"\nApplying sales interpolation for low instock (threshold: {instock_threshold})...")
+        # Apply category-level interpolation if configured
+        if interpolation_level == 'category':
+            print(f"\nApplying category-level sales interpolation (threshold: {instock_threshold})...")
+            agg = self._interpolate_category_level(agg, valid_categories, instock_threshold)
 
+        print(f"✓ {len(agg)} records, {agg['category'].nunique()} categories")
+        print(f"  Date range: {agg['date'].min()} to {agg['date'].max()}")
+
+        return agg
+
+    def _interpolate_sku_level(self, sku_df, instock_threshold):
+        """Interpolate sales at SKU level for stockout correction"""
+        interpolated_skus = 0
+        interpolated_days = 0
+
+        for sku in sku_df['sku_id'].unique():
+            sku_mask = sku_df['sku_id'] == sku
+            low_instock_mask = sku_mask & (sku_df['instock_rate'] < instock_threshold)
+
+            if low_instock_mask.sum() > 0:
+                sku_data = sku_df[sku_mask].copy()
+
+                # Mark low instock points as NaN for interpolation
+                sku_data.loc[sku_data['instock_rate'] < instock_threshold, 'sales'] = np.nan
+
+                # Apply linear interpolation
+                sku_data['sales'] = sku_data['sales'].interpolate(method='linear', limit_direction='both')
+
+                # Update main dataframe
+                sku_df.loc[sku_mask, 'sales'] = sku_data['sales'].values
+
+                interpolated_skus += 1
+                interpolated_days += low_instock_mask.sum()
+
+        print(f"  ✓ Interpolated {interpolated_days} days across {interpolated_skus} SKUs")
+        return sku_df
+
+    def _interpolate_category_level(self, agg, valid_categories, instock_threshold):
+        """Interpolate sales at category level for stockout correction"""
         interpolated_count = 0
+
         for cat in valid_categories:
             cat_mask = agg['category'] == cat
             low_instock_mask = cat_mask & (agg['instock_rate'] < instock_threshold)
@@ -99,10 +142,7 @@ class CategoryForecaster:
                 interpolated_count += low_instock_mask.sum()
                 print(f"  {cat}: {low_instock_mask.sum()} days interpolated")
 
-        print(f"✓ Total {interpolated_count} days with sales interpolated due to low instock")
-        print(f"✓ {len(agg)} records, {agg['category'].nunique()} categories")
-        print(f"  Date range: {agg['date'].min()} to {agg['date'].max()}")
-
+        print(f"  ✓ Total {interpolated_count} category-days interpolated")
         return agg
 
     def decompose(self, category_df):

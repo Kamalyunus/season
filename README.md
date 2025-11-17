@@ -6,6 +6,7 @@ Minimal, production-ready forecasting system using MSTL decomposition, temperatu
 
 Recent improvements for better accuracy and production readiness:
 
+- **SKU-Level Interpolation**: Apply stockout correction at SKU level before aggregation (`interpolation_level: 'sku'`)
 - **Configurable Yearly Seasonality**: Choose between last year's pattern or multi-year average (`yearly_seasonality_strategy: 'last_year'`)
 - **Damped Trend Forecasting**: Prevents unrealistic trend extrapolation (configurable `damping_trend: 0.95`)
 - **lag_1 Feature Added**: Yesterday's sales now included (`lag_days: [1, 7, 14, 28]`)
@@ -286,20 +287,64 @@ Corrects sales during stockouts (low instock periods) using linear interpolation
 **Configuration**:
 ```yaml
 preprocessing:
-  instock_threshold: 0.85  # Interpolate when instock < 85%
+  instock_threshold: 0.85      # Interpolate when instock < 85%
+  interpolation_level: 'sku'   # 'sku' or 'category'
 ```
 
-**How it works**:
+**Two Interpolation Strategies**:
+
+**A) SKU-Level (Recommended, Default)**
+```yaml
+interpolation_level: 'sku'
 ```
-Day    Instock    Sales_Raw    Sales_Interpolated
-1      95%        100          100 (no change)
-2      95%        105          105 (no change)
-3      70%        60           102.5 (interpolated)
-4      75%        65           107.5 (interpolated)
-5      95%        110          110 (no change)
+- Interpolates each SKU's sales individually during stockouts, then aggregates
+- **Best for**: Most retail scenarios, especially when:
+  - SKUs have unique attributes (flavors, sizes, brands)
+  - Substitution rates vary across SKUs
+  - You need to capture true SKU-level demand
+- **Benefits**:
+  - Prevents signal loss from partial assortment stockouts
+  - More granular demand estimation
+  - Handles mixed substitution scenarios
+  - Better for future SKU-level forecasting
+
+**Example (SKU-level)**:
+```
+Day 1 (Normal):
+  SKU A: 100 units, 100% instock
+  SKU B: 50 units, 100% instock
+  → Category: 150 units
+
+Day 2 (SKU A stockout):
+  SKU A: 30 units, 60% instock ← Interpolated to ~100
+  SKU B: 50 units, 100% instock ← Kept as-is
+  → Category: 150 units (captures true demand)
 ```
 
-**When to adjust**:
+**B) Category-Level**
+```yaml
+interpolation_level: 'category'
+```
+- Aggregates first, then interpolates category-level sales
+- **Best for**: High substitution scenarios:
+  - Pure commodities (sugar, salt)
+  - Perfect substitutes (identical private label items)
+  - Only care about category forecasts, never SKU-level
+- **Benefits**:
+  - Better when customers freely substitute within category
+  - Slightly faster computation
+  - Avoids over-estimation from substitution effects
+
+**Example (Category-level)**:
+```
+Day 2 (with substitution):
+  SKU A: 30 units, 60% instock
+  SKU B: 90 units, 100% instock ← Customers substituted
+  → Category: 120 units, 80% instock
+  → Interpolated to ~145 units (closer to true demand with substitution)
+```
+
+**When to adjust threshold**:
 - Fresh products: 0.80-0.90 (higher sensitivity)
 - Non-perishables: 0.70-0.80
 - Fast movers: 0.85-0.95
@@ -426,6 +471,7 @@ python validate.py  # ✓ Uses tuned params
 preprocessing:
   min_skus_per_category: 10      # Filter categories with < N SKUs
   instock_threshold: 0.85        # Interpolate sales when instock < 85%
+  interpolation_level: 'sku'     # 'sku' (recommended) or 'category'
 
 # Decomposition
 decomposition:

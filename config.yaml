@@ -20,6 +20,11 @@ preprocessing:
   # Range: 0.0-1.0 (e.g., 0.8 = 80% instock)
   instock_threshold: 0.85
 
+  # Interpolation level: where to apply stockout correction
+  # 'sku': Interpolate at SKU level before aggregation (recommended, captures true demand)
+  # 'category': Interpolate at category level after aggregation (better for high substitution)
+  interpolation_level: 'sku'
+
 # Forecasting Parameters
 forecast:
   horizon_days: 21  # How many days ahead to forecast
