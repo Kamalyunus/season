@@ -47,7 +47,7 @@ SKU-Day Data
     ↓
 5. train_seasonal_model()        # Calculate temperature sensitivity (math formula, NO model training)
     ↓
-6. train_lgbm()                  # Train LightGBM on residuals (auto-loads tuned params)
+6. train_lgbm()                  # Train LightGBM on total sales (using components as features)
     ↓
 7. generate_forecast()           # Combine components + LightGBM prediction (uses last_year or average strategy)
 ```
